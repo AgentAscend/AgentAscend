@@ -3,37 +3,57 @@
   
 
 ## Summary
+End-to-end flow for gating agent functionality via blockchain payments, aligned with Token Gated Access policies and Payment System settlement.
 
-End-to-end flow for gating access to agent functionality using blockchain payments.
-
-  
-
-## Steps
-
-1. User initiates action (e.g. request random number)
-
-2. Backend generates payment transaction
-
-3. User signs transaction with wallet
-
-4. Transaction is submitted to blockchain
-
-5. Backend verifies payment
-
-6. Access is granted
-
-  
+## Components
+- User request handling
+- Policy evaluation
+- Payment initiation
+- Transaction processing
+- Settlement verification
+- Access control
+- Tool execution
+- Observability and logging
 
 ## Relationships
+- Uses [[Token Gated Access]]
+- Uses [[Payment System]]
+- Uses [[Solana Integration]]
+- Triggers [[Tool System]]
+- Initiated via [[Telegram Interface]]
 
-- [[Tokenized Agents]]
+## Workflow
+1. User initiates action via [[Telegram Interface]]
+2. [[Token Gated Access]] evaluates eligibility
+   - If denied → return reason and stop
+3. Backend generates payment request (amount, token, expiry, idempotency key)
+4. [[Payment System]] creates transaction payload
+5. User signs transaction via wallet
+6. Transaction submitted through [[Solana Integration]]
+7. Backend waits for confirmation
+8. [[Payment System]] verifies settlement and updates state (pending → completed)
+9. [[Token Gated Access]] re-validates payment
+10. If valid → [[Tool System]] executes action
+11. Result returned to user
 
-- [[Payment System]]
+## Error Handling
+- Insufficient funds
+- Transaction timeout
+- Network failures
+- Expired payment requests
+- Invalid signatures
 
-- [[User System]]
+## Security
+- Signature verification
+- Replay protection
+- Idempotency enforcement
+- Optional allowlist/denylist
 
-  
+## Observability
+- Payment success rate
+- Verification latency
+- Failure tracking by reason
+- Audit logs
 
 ## Notes
-
-This is the core monetization loop for AgentAscend.
+This flow operationalizes the Payment System and Token Gated Access. It must be reliable, idempotent, and observable for production use.
