@@ -120,6 +120,13 @@ def earnings_summary(creator_user_id: str, window: WindowType = "30d"):
     }
 
 
+# Frontend compatibility alias (v0 contract):
+# GET /marketplace/creators/{creator_user_id}/earnings/summary
+@router.get("/marketplace/creators/{creator_user_id}/earnings/summary", response_model=EarningsSummaryResponse)
+def marketplace_creator_earnings_summary(creator_user_id: str, window: WindowType = "30d"):
+    return earnings_summary(creator_user_id=creator_user_id, window=window)
+
+
 @router.get("/creator/earnings/events", response_model=EarningsEventsResponse)
 def earnings_events(creator_user_id: str, window: WindowType = "30d"):
     extra_sql, extra_params = _event_where_clause(window)
@@ -161,6 +168,13 @@ def earnings_events(creator_user_id: str, window: WindowType = "30d"):
         "window": window,
         "events": events,
     }
+
+
+# Frontend compatibility alias (v0 contract):
+# GET /marketplace/creators/{creator_user_id}/earnings/events
+@router.get("/marketplace/creators/{creator_user_id}/earnings/events", response_model=EarningsEventsResponse)
+def marketplace_creator_earnings_events(creator_user_id: str, window: WindowType = "30d"):
+    return earnings_events(creator_user_id=creator_user_id, window=window)
 
 
 @router.post("/creator/payouts/request", response_model=PayoutRequestResponse)
@@ -344,3 +358,96 @@ def transition_payout(request_id: str, payload: PayoutTransitionInput):
     logger.info("payout_transition_success request_id=%s action=%s", request_id, payload.action)
 
     return {**response_payload, "idempotency_replayed": False}
+
+
+def _legacy_payout_payload(payout: dict) -> dict:
+    """Compatibility shape expected by v0 frontend payout client."""
+    request_id = payout.get("request_id")
+    requested_amount = payout.get("requested_amount")
+    try:
+        amount_value = float(requested_amount) if requested_amount is not None else 0.0
+    except (TypeError, ValueError):
+        amount_value = 0.0
+
+    return {
+        "id": request_id,
+        "creator_user_id": payout.get("creator_user_id"),
+        "amount": amount_value,
+        "token": payout.get("token"),
+        "destination_wallet": payout.get("destination_wallet"),
+        "note": payout.get("note"),
+        "status": payout.get("status"),
+        "created_at": payout.get("created_at"),
+        "updated_at": payout.get("updated_at"),
+        "tx_signature": payout.get("tx_signature"),
+        "paid_at": payout.get("paid_at"),
+        "admin_note": payout.get("rejection_reason"),
+    }
+
+
+# Frontend compatibility alias (v0 contract):
+# POST /marketplace/creators/{creator_user_id}/payouts/request
+@router.post("/marketplace/creators/{creator_user_id}/payouts/request")
+def marketplace_request_payout(creator_user_id: str, payload: dict):
+    normalized = PayoutRequestInput(
+        creator_user_id=creator_user_id,
+        requested_amount=payload.get("requested_amount", payload.get("amount")),
+        token=payload.get("token", "ASND"),
+        destination_wallet=payload.get("destination_wallet", ""),
+        note=payload.get("note"),
+        idempotency_key=payload.get("idempotency_key"),
+    )
+    response = request_payout(normalized)
+    return {"request": _legacy_payout_payload(response["payout"])}
+
+
+# Frontend compatibility alias (v0 contract):
+# GET /marketplace/creators/{creator_user_id}/payouts
+@router.get("/marketplace/creators/{creator_user_id}/payouts")
+def marketplace_list_payouts(creator_user_id: str):
+    response = list_payouts(creator_user_id)
+    return {"requests": [_legacy_payout_payload(p) for p in response["payouts"]]}
+
+
+def _actor_from_payload(payload: dict) -> str:
+    audit = payload.get("audit") if isinstance(payload.get("audit"), dict) else {}
+    actor_user_id = audit.get("acted_by") or payload.get("actor_user_id")
+    return str(actor_user_id or "")
+
+
+# Frontend compatibility aliases (v0 settlement contract)
+@router.post("/marketplace/payouts/{request_id}/approve")
+def marketplace_approve_payout(request_id: str, payload: dict):
+    transition_input = PayoutTransitionInput(
+        action="approve",
+        actor_user_id=_actor_from_payload(payload),
+        reason=payload.get("admin_note"),
+        idempotency_key=payload.get("idempotency_key"),
+    )
+    response = transition_payout(request_id, transition_input)
+    return {"success": True, "request": _legacy_payout_payload(response["payout"])}
+
+
+@router.post("/marketplace/payouts/{request_id}/reject")
+def marketplace_reject_payout(request_id: str, payload: dict):
+    transition_input = PayoutTransitionInput(
+        action="reject",
+        actor_user_id=_actor_from_payload(payload),
+        reason=payload.get("reason") or payload.get("admin_note") or "Rejected",
+        idempotency_key=payload.get("idempotency_key"),
+    )
+    response = transition_payout(request_id, transition_input)
+    return {"success": True, "request": _legacy_payout_payload(response["payout"])}
+
+
+@router.post("/marketplace/payouts/{request_id}/mark-paid")
+def marketplace_mark_paid_payout(request_id: str, payload: dict):
+    transition_input = PayoutTransitionInput(
+        action="mark_paid",
+        actor_user_id=_actor_from_payload(payload),
+        tx_signature=payload.get("tx_signature"),
+        reason=payload.get("admin_note"),
+        idempotency_key=payload.get("idempotency_key"),
+    )
+    response = transition_payout(request_id, transition_input)
+    return {"success": True, "request": _legacy_payout_payload(response["payout"])}
