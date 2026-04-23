@@ -19,6 +19,7 @@ class PaymentVerifyRequest(BaseModel):
     user_id: str = Field(min_length=1)
     tx_signature: str = Field(min_length=1)
     token: TokenType = "SOL"
+    idempotency_key: str | None = None
 
 
 class PaymentCreateResponse(BaseModel):

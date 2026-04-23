@@ -1,6 +1,8 @@
+import logging
 import os
 import re
 import sqlite3
+import uuid
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, HTTPException
@@ -18,13 +20,16 @@ from backend.app.schemas.payments import (
     PaymentVerifyResponse,
 )
 from backend.app.services.access_service import FEATURE_RANDOM_NUMBER, grant_access
+from backend.app.services.idempotency import check_or_begin, finalize
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 DEFAULT_SOL_PRICE_LAMPORTS = 100_000_000  # 0.1 SOL
 DEFAULT_ASND_PRICE_TOKENS = Decimal("100")
 SUPPORTED_TOKENS = {"SOL", "ASND"}
 _SIGNATURE_PATTERN = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{80,100}$")
+
 
 
 def _normalize_token(token: str) -> str:
@@ -139,6 +144,20 @@ def verify_payment(payload: PaymentVerifyRequest):
     selected_token = _normalize_token(payload.token)
     _validate_signature_format(payload.tx_signature)
 
+    idempotency_key = payload.idempotency_key or f"pay_{uuid.uuid4().hex}"
+    scope = f"payment_verify:{payload.user_id}"
+    replay = check_or_begin(
+        scope,
+        idempotency_key,
+        {
+            "user_id": payload.user_id,
+            "tx_signature": payload.tx_signature,
+            "token": selected_token,
+        },
+    )
+    if replay:
+        return replay["payload"]
+
     tx_result = fetch_transaction(payload.tx_signature)
     if not tx_result:
         raise HTTPException(status_code=400, detail="Transaction not found or not confirmed")
@@ -222,7 +241,7 @@ def verify_payment(payload: PaymentVerifyRequest):
 
     grant_access(payload.user_id, FEATURE_RANDOM_NUMBER)
 
-    return {
+    response_payload = {
         "status": "payment_verified",
         "user_id": payload.user_id,
         "payment_id": payment_id,
@@ -230,3 +249,6 @@ def verify_payment(payload: PaymentVerifyRequest):
         "token": selected_token,
         **payment_details,
     }
+    finalize(scope, idempotency_key, response_payload)
+    logger.info("payment_verified_success user_id=%s token=%s", payload.user_id, selected_token)
+    return response_payload
