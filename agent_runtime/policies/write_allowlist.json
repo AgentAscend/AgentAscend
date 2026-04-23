@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "description": "Write locations allowed for normal autonomous edits.",
+  "allow": [
+    "backend/**",
+    "scripts/**",
+    "wiki/**",
+    "raw/**",
+    "agent_runtime/**",
+    "README.md",
+    "AGENTS.md",
+    ".gitignore",
+    "wiki_tools.py"
+  ],
+  "deny_overrides": [
+    ".git/**",
+    "backend/app/db/*.db",
+    "backend/app/db/*.db-shm",
+    "backend/app/db/*.db-wal",
+    ".env*",
+    "*.pem",
+    "*.key"
+  ]
+}

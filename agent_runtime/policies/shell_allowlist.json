@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "description": "Shell commands allowed for routine repo-safe operations.",
+  "allow_exact": [
+    "python3",
+    "pytest",
+    "sqlite3",
+    "curl",
+    "git status",
+    "git diff",
+    "git show",
+    "git log",
+    "git add",
+    "git commit"
+  ],
+  "allow_prefix": [
+    "python3 -m py_compile",
+    "python3 scripts/",
+    "pytest ",
+    "sqlite3 backend/app/db/",
+    "curl -s"
+  ],
+  "deny_patterns": [
+    "rm -rf /",
+    "chmod 777",
+    "chown -R",
+    "sudo ",
+    "dd if=",
+    "mkfs",
+    "shutdown",
+    "reboot"
+  ]
+}

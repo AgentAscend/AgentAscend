@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "description": "Paths that require explicit approval before write/delete operations.",
+  "protected_paths": [
+    {
+      "path": ".git/**",
+      "reason": "Git internals must never be modified directly."
+    },
+    {
+      "path": "system/**",
+      "reason": "System purpose/schema files define global behavior and require deliberate changes."
+    },
+    {
+      "path": "backend/app/db/*.db",
+      "reason": "Runtime SQLite database artifacts are environment state, not source files."
+    },
+    {
+      "path": "backend/app/db/*.db-shm",
+      "reason": "SQLite shared-memory runtime artifact."
+    },
+    {
+      "path": "backend/app/db/*.db-wal",
+      "reason": "SQLite WAL runtime artifact."
+    },
+    {
+      "path": "*.pem",
+      "reason": "Potential private key material."
+    },
+    {
+      "path": "*.key",
+      "reason": "Potential private key material."
+    },
+    {
+      "path": ".env*",
+      "reason": "Environment/secret files require explicit confirmation."
+    }
+  ]
+}
