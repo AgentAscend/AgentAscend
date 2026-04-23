@@ -1,31 +1,18 @@
-
-
-  
-
 ## Summary
-
-Defines constraints and behavior rules for the agent.
-
-  
+Defines the operating constraints for AgentAscend, including strict knowledge-folder boundaries for the LLM-Wiki workflow.
 
 ## Components
-
-- Usage limits
-
-- Access control
-
-- Safety logic
-
-  
+- Knowledge boundary rules (`/raw`, `/wiki`, `/system`)
+- Access control and payment enforcement
+- Safety and execution guardrails
 
 ## Relationships
-
 - Applies to [[Hermes Agent]]
-
-- Enforced by backend
-
-  
+- Enforced by [[Tool System]] and backend routes
+- Supports [[Knowledge System]]
 
 ## Notes
-
-Critical for preventing misuse and controlling costs.
+- Put unprocessed notes in `/raw`.
+- Put structured pages in `/wiki`.
+- Put system definitions and rules in `/system`.
+- These boundaries are mandatory to keep the Obsidian vault clean and auditable.
