@@ -12,6 +12,7 @@ def random_number(user_id: str):
     if not has_access(user_id, FEATURE_RANDOM_NUMBER):
         return {
             "status": "payment_required",
+            "payment_required": True,
             "message": "Please pay 0.1 SOL to access this tool",
         }
 

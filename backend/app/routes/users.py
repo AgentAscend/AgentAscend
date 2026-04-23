@@ -10,7 +10,7 @@ def get_user_access(user_id: str):
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT feature_name, status, payment_id, created_at
+            SELECT feature_name, status, created_at
             FROM access_grants
             WHERE user_id = ?
             ORDER BY id DESC
