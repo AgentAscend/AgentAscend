@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from backend.app.db.session import init_db
-from backend.app.routes import health, marketplace, payments, telegram, tools, users
+from backend.app.routes import creator, health, marketplace, payments, telegram, tools, users
 
 app = FastAPI()
 
@@ -43,5 +43,6 @@ app.include_router(health.router)
 app.include_router(payments.router)
 app.include_router(tools.router)
 app.include_router(marketplace.router)
+app.include_router(creator.router)
 app.include_router(users.router)
 app.include_router(telegram.router)
