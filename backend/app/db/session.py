@@ -30,9 +30,21 @@ def init_db():
                 amount REAL NOT NULL,
                 token TEXT NOT NULL,
                 status TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                tx_signature TEXT UNIQUE
             )
             """
+        )
+
+        payment_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(payments)").fetchall()
+        }
+        if "tx_signature" not in payment_columns:
+            conn.execute("ALTER TABLE payments ADD COLUMN tx_signature TEXT")
+
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_tx_signature ON payments(tx_signature)"
         )
 
         conn.execute(
