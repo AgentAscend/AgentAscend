@@ -17,16 +17,16 @@ def create_payment(user_id: str):
 
 
 @router.post("/payments/verify")
-def verify_payment(user_id: str):
+def verify_payment(user_id: str, tx_signature: str):
+    # TODO: replace with real blockchain verification
+
     with get_connection() as conn:
-        # ensure user exists
         conn.execute(
             "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
             (user_id,),
         )
 
-        # record payment
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT INTO payments (user_id, amount, token, status)
             VALUES (?, ?, ?, ?)
@@ -34,13 +34,14 @@ def verify_payment(user_id: str):
             (user_id, 0.1, "SOL", "completed"),
         )
 
+        payment_id = cursor.lastrowid
         conn.commit()
 
-    grant_access(user_id, FEATURE_RANDOM_NUMBER)
+    grant_access(user_id, FEATURE_RANDOM_NUMBER, payment_id)
 
     return {
         "status": "payment_verified",
         "user_id": user_id,
+        "payment_id": payment_id,
+        "tx_signature": tx_signature,
     }
-
-
