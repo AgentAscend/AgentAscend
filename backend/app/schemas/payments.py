@@ -23,9 +23,15 @@ class PaymentVerifyRequest(BaseModel):
 
 class PaymentCreateResponse(BaseModel):
     status: Literal["payment_required"]
+    payment_required: Literal[True] = True
     user_id: str
     amount: float | str
     token: TokenType
+    receiver: str
+    receiver_wallet: str
+    receiver_token_account: str | None = None
+    reference: str
+    ttl_seconds: int
     amount_lamports: int | None = None
 
 

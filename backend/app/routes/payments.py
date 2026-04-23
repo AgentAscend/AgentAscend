@@ -71,26 +71,66 @@ def _asnd_price_tokens() -> Decimal:
     return value
 
 
+def _payment_ttl_seconds() -> int:
+    raw = os.getenv("PAYMENT_TTL_SECONDS")
+    if raw is None or raw.strip() == "":
+        return 900
+
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail="PAYMENT_TTL_SECONDS must be an integer") from exc
+
+    if value <= 0:
+        raise HTTPException(status_code=500, detail="PAYMENT_TTL_SECONDS must be greater than zero")
+
+    return value
+
+
+def _payment_reference(user_id: str, token: str) -> str:
+    return f"{user_id}:{token}:{os.urandom(8).hex()}"
+
+
 @router.post("/payments/create", response_model=PaymentCreateResponse)
 def create_payment(payload: PaymentCreateRequest):
     selected_token = _normalize_token(payload.token)
+
+    receiver_wallet = os.getenv("SOLANA_RECEIVER_WALLET")
+    if not receiver_wallet:
+        raise HTTPException(status_code=500, detail="SOLANA_RECEIVER_WALLET is not set")
+
+    ttl_seconds = _payment_ttl_seconds()
+    reference = _payment_reference(payload.user_id, selected_token)
 
     if selected_token == "SOL":
         sol_price_lamports = _sol_price_lamports()
         return {
             "status": "payment_required",
+            "payment_required": True,
             "user_id": payload.user_id,
             "amount": sol_price_lamports / 1_000_000_000,
             "amount_lamports": sol_price_lamports,
             "token": "SOL",
+            "receiver": receiver_wallet,
+            "receiver_wallet": receiver_wallet,
+            "receiver_token_account": None,
+            "reference": reference,
+            "ttl_seconds": ttl_seconds,
         }
 
     asnd_price_tokens = _asnd_price_tokens()
+    receiver_token_account = os.getenv("ASND_RECEIVER_TOKEN_ACCOUNT")
     return {
         "status": "payment_required",
+        "payment_required": True,
         "user_id": payload.user_id,
         "amount": str(asnd_price_tokens),
         "token": "ASND",
+        "receiver": receiver_token_account or receiver_wallet,
+        "receiver_wallet": receiver_wallet,
+        "receiver_token_account": receiver_token_account,
+        "reference": reference,
+        "ttl_seconds": ttl_seconds,
     }
 
 
