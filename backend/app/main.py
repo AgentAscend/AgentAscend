@@ -1,10 +1,35 @@
+import os
+
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.app.db.session import init_db
 from backend.app.routes import creator, health, marketplace, payments, telegram, tools, users
 
 app = FastAPI()
+
+
+def _cors_allowed_origins() -> list[str]:
+    raw = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    if raw.strip():
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+    return [
+        "https://agentascend.ai",
+        "https://www.agentascend.ai",
+        "http://localhost:3000",
+    ]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_allowed_origins(),
+    allow_origin_regex=os.getenv("CORS_ALLOWED_ORIGIN_REGEX") or None,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _map_error_code(status_code: int, message: str) -> str:
