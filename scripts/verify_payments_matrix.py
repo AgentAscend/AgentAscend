@@ -62,14 +62,14 @@ def main():
 
     # 1) Unsupported token
     try:
-        mod.create_payment("matrix_user", "BAD")
+        mod.create_payment(types.SimpleNamespace(user_id="matrix_user", token="BAD"))
         checks.append(("unsupported_token", False, "expected HTTP 400"))
     except HTTPException as e:
         checks.append(("unsupported_token", e.status_code == 400, f"{e.status_code} {e.detail}"))
 
     # 2) Invalid signature format
     try:
-        mod.verify_payment("matrix_user", "not-a-real-signature", "SOL")
+        mod.verify_payment(mod.PaymentVerifyRequest(user_id="matrix_user", tx_signature="not-a-real-signature", token="SOL"))
         checks.append(("invalid_signature", False, "expected HTTP 400"))
     except HTTPException as e:
         checks.append(("invalid_signature", e.status_code == 400, f"{e.status_code} {e.detail}"))
@@ -82,7 +82,7 @@ def main():
     )
     old_mint = os.environ.pop("ASND_MINT_ADDRESS", None)
     try:
-        mod.verify_payment("matrix_user", chain_valid_sig, "ASND")
+        mod.verify_payment(mod.PaymentVerifyRequest(user_id="matrix_user", tx_signature=chain_valid_sig, token="ASND"))
         checks.append(("missing_asnd_mint", False, "expected HTTP 500"))
     except HTTPException as e:
         checks.append(("missing_asnd_mint", e.status_code == 500, f"{e.status_code} {e.detail}"))
@@ -92,7 +92,7 @@ def main():
 
     # 4) Chain path with fake format-valid signature should fail cleanly
     try:
-        mod.verify_payment("matrix_user", "4" * 88, "ASND")
+        mod.verify_payment(mod.PaymentVerifyRequest(user_id="matrix_user", tx_signature="4" * 88, token="ASND"))
         checks.append(("fake_sig_chain_path", False, "expected HTTP 400"))
     except HTTPException as e:
         checks.append(("fake_sig_chain_path", e.status_code == 400, f"{e.status_code} {e.detail}"))
@@ -101,7 +101,9 @@ def main():
     success_sig = os.getenv("TEST_ASND_SUCCESS_SIG", "").strip()
     if success_sig:
         try:
-            result = mod.verify_payment("matrix_success_user", success_sig, "ASND")
+            result = mod.verify_payment(
+                mod.PaymentVerifyRequest(user_id="matrix_success_user", tx_signature=success_sig, token="ASND")
+            )
             ok = result.get("status") == "payment_verified"
             checks.append(("real_asnd_success_sig", ok, str(result)))
         except HTTPException as e:

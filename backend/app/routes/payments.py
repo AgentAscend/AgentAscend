@@ -11,6 +11,12 @@ from backend.app.providers.spl_token_rpc import (
     get_receiver_token_account,
     received_token_amount_for_wallet,
 )
+from backend.app.schemas.payments import (
+    PaymentCreateRequest,
+    PaymentCreateResponse,
+    PaymentVerifyRequest,
+    PaymentVerifyResponse,
+)
 from backend.app.services.access_service import FEATURE_RANDOM_NUMBER, grant_access
 
 router = APIRouter()
@@ -65,15 +71,15 @@ def _asnd_price_tokens() -> Decimal:
     return value
 
 
-@router.post("/payments/create")
-def create_payment(user_id: str, token: str = "SOL"):
-    selected_token = _normalize_token(token)
+@router.post("/payments/create", response_model=PaymentCreateResponse)
+def create_payment(payload: PaymentCreateRequest):
+    selected_token = _normalize_token(payload.token)
 
     if selected_token == "SOL":
         sol_price_lamports = _sol_price_lamports()
         return {
             "status": "payment_required",
-            "user_id": user_id,
+            "user_id": payload.user_id,
             "amount": sol_price_lamports / 1_000_000_000,
             "amount_lamports": sol_price_lamports,
             "token": "SOL",
@@ -82,18 +88,18 @@ def create_payment(user_id: str, token: str = "SOL"):
     asnd_price_tokens = _asnd_price_tokens()
     return {
         "status": "payment_required",
-        "user_id": user_id,
+        "user_id": payload.user_id,
         "amount": str(asnd_price_tokens),
         "token": "ASND",
     }
 
 
-@router.post("/payments/verify")
-def verify_payment(user_id: str, tx_signature: str, token: str = "SOL"):
-    selected_token = _normalize_token(token)
-    _validate_signature_format(tx_signature)
+@router.post("/payments/verify", response_model=PaymentVerifyResponse)
+def verify_payment(payload: PaymentVerifyRequest):
+    selected_token = _normalize_token(payload.token)
+    _validate_signature_format(payload.tx_signature)
 
-    tx_result = fetch_transaction(tx_signature)
+    tx_result = fetch_transaction(payload.tx_signature)
     if not tx_result:
         raise HTTPException(status_code=400, detail="Transaction not found or not confirmed")
 
@@ -157,7 +163,7 @@ def verify_payment(user_id: str, tx_signature: str, token: str = "SOL"):
     with get_connection() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
-            (user_id,),
+            (payload.user_id,),
         )
 
         try:
@@ -166,7 +172,7 @@ def verify_payment(user_id: str, tx_signature: str, token: str = "SOL"):
                 INSERT INTO payments (user_id, amount, token, status, tx_signature)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (user_id, amount, selected_token, "completed", tx_signature),
+                (payload.user_id, amount, selected_token, "completed", payload.tx_signature),
             )
         except sqlite3.IntegrityError as exc:
             raise HTTPException(status_code=400, detail="Transaction signature already used") from exc
@@ -174,13 +180,13 @@ def verify_payment(user_id: str, tx_signature: str, token: str = "SOL"):
         payment_id = cursor.lastrowid
         conn.commit()
 
-    grant_access(user_id, FEATURE_RANDOM_NUMBER)
+    grant_access(payload.user_id, FEATURE_RANDOM_NUMBER)
 
     return {
         "status": "payment_verified",
-        "user_id": user_id,
+        "user_id": payload.user_id,
         "payment_id": payment_id,
-        "tx_signature": tx_signature,
+        "tx_signature": payload.tx_signature,
         "token": selected_token,
         **payment_details,
     }
