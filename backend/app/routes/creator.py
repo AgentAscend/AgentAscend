@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter
+from pydantic import ValidationError
 
 from backend.app.db.session import get_connection
 from backend.app.schemas.creator import (
@@ -385,18 +386,34 @@ def _legacy_payout_payload(payout: dict) -> dict:
     }
 
 
+def _pydantic_validation_message(exc: ValidationError) -> str:
+    """Return a compact validation message suitable for normalized API errors."""
+    errors = exc.errors()
+    if not errors:
+        return "Invalid request payload"
+
+    first = errors[0]
+    loc = ".".join(str(part) for part in first.get("loc", []))
+    msg = str(first.get("msg", "Invalid request payload"))
+    return f"{loc}: {msg}" if loc else msg
+
+
 # Frontend compatibility alias (v0 contract):
 # POST /marketplace/creators/{creator_user_id}/payouts/request
 @router.post("/marketplace/creators/{creator_user_id}/payouts/request")
 def marketplace_request_payout(creator_user_id: str, payload: dict):
-    normalized = PayoutRequestInput(
-        creator_user_id=creator_user_id,
-        requested_amount=payload.get("requested_amount", payload.get("amount")),
-        token=payload.get("token", "ASND"),
-        destination_wallet=payload.get("destination_wallet", ""),
-        note=payload.get("note"),
-        idempotency_key=payload.get("idempotency_key"),
-    )
+    try:
+        normalized = PayoutRequestInput(
+            creator_user_id=creator_user_id,
+            requested_amount=payload.get("requested_amount", payload.get("amount")),
+            token=payload.get("token", "ASND"),
+            destination_wallet=payload.get("destination_wallet", ""),
+            note=payload.get("note"),
+            idempotency_key=payload.get("idempotency_key"),
+        )
+    except ValidationError as exc:
+        fail(400, "validation_error", _pydantic_validation_message(exc))
+
     response = request_payout(normalized)
     return {"request": _legacy_payout_payload(response["payout"])}
 
@@ -418,36 +435,48 @@ def _actor_from_payload(payload: dict) -> str:
 # Frontend compatibility aliases (v0 settlement contract)
 @router.post("/marketplace/payouts/{request_id}/approve")
 def marketplace_approve_payout(request_id: str, payload: dict):
-    transition_input = PayoutTransitionInput(
-        action="approve",
-        actor_user_id=_actor_from_payload(payload),
-        reason=payload.get("admin_note"),
-        idempotency_key=payload.get("idempotency_key"),
-    )
+    try:
+        transition_input = PayoutTransitionInput(
+            action="approve",
+            actor_user_id=_actor_from_payload(payload),
+            reason=payload.get("admin_note"),
+            idempotency_key=payload.get("idempotency_key"),
+        )
+    except ValidationError as exc:
+        fail(400, "validation_error", _pydantic_validation_message(exc))
+
     response = transition_payout(request_id, transition_input)
     return {"success": True, "request": _legacy_payout_payload(response["payout"])}
 
 
 @router.post("/marketplace/payouts/{request_id}/reject")
 def marketplace_reject_payout(request_id: str, payload: dict):
-    transition_input = PayoutTransitionInput(
-        action="reject",
-        actor_user_id=_actor_from_payload(payload),
-        reason=payload.get("reason") or payload.get("admin_note") or "Rejected",
-        idempotency_key=payload.get("idempotency_key"),
-    )
+    try:
+        transition_input = PayoutTransitionInput(
+            action="reject",
+            actor_user_id=_actor_from_payload(payload),
+            reason=payload.get("reason") or payload.get("admin_note") or "Rejected",
+            idempotency_key=payload.get("idempotency_key"),
+        )
+    except ValidationError as exc:
+        fail(400, "validation_error", _pydantic_validation_message(exc))
+
     response = transition_payout(request_id, transition_input)
     return {"success": True, "request": _legacy_payout_payload(response["payout"])}
 
 
 @router.post("/marketplace/payouts/{request_id}/mark-paid")
 def marketplace_mark_paid_payout(request_id: str, payload: dict):
-    transition_input = PayoutTransitionInput(
-        action="mark_paid",
-        actor_user_id=_actor_from_payload(payload),
-        tx_signature=payload.get("tx_signature"),
-        reason=payload.get("admin_note"),
-        idempotency_key=payload.get("idempotency_key"),
-    )
+    try:
+        transition_input = PayoutTransitionInput(
+            action="mark_paid",
+            actor_user_id=_actor_from_payload(payload),
+            tx_signature=payload.get("tx_signature"),
+            reason=payload.get("admin_note"),
+            idempotency_key=payload.get("idempotency_key"),
+        )
+    except ValidationError as exc:
+        fail(400, "validation_error", _pydantic_validation_message(exc))
+
     response = transition_payout(request_id, transition_input)
     return {"success": True, "request": _legacy_payout_payload(response["payout"])}
