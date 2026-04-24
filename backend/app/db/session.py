@@ -179,4 +179,270 @@ def init_db():
             """
         )
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT NOT NULL,
+                status TEXT NOT NULL,
+                tasks_completed INTEGER NOT NULL DEFAULT 0,
+                success_rate REAL NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS deployments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                deployment_id TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                environment TEXT NOT NULL,
+                status TEXT NOT NULL,
+                region TEXT NOT NULL,
+                agents_count INTEGER NOT NULL DEFAULT 0,
+                cpu_percent INTEGER NOT NULL DEFAULT 0,
+                memory_percent INTEGER NOT NULL DEFAULT 0,
+                requests_per_day INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS workflows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workflow_id TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                runs_total INTEGER NOT NULL DEFAULT 0,
+                success_rate REAL NOT NULL DEFAULT 0,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS workflow_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT UNIQUE NOT NULL,
+                workflow_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                duration_ms INTEGER NOT NULL DEFAULT 0,
+                started_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL,
+                priority TEXT NOT NULL,
+                assigned_to TEXT,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS outputs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                output_id TEXT UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                output_type TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                download_url TEXT NOT NULL,
+                created_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS community_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id TEXT UNIQUE NOT NULL,
+                author_user_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL,
+                likes INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                notification_id TEXT UNIQUE NOT NULL,
+                user_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT UNIQUE NOT NULL,
+                notifications_email INTEGER NOT NULL DEFAULT 1,
+                notifications_push INTEGER NOT NULL DEFAULT 1,
+                notifications_marketing INTEGER NOT NULL DEFAULT 0,
+                theme TEXT NOT NULL DEFAULT 'dark',
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS marketplace_entitlements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                listing_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                installed_at DATETIME NOT NULL,
+                UNIQUE(listing_id, user_id)
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                action TEXT NOT NULL,
+                occurred_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        agents_count = conn.execute("SELECT COUNT(*) FROM agents").fetchone()[0]
+        if agents_count == 0:
+            conn.executemany(
+                """
+                INSERT INTO agents(agent_id, name, category, description, status, tasks_completed, success_rate, created_at, updated_at)
+                VALUES(?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                """,
+                [
+                    ("agt_research_alpha", "Research Alpha", "Research", "Analyzing market trends", "active", 156, 98.5),
+                    ("agt_builder_bot", "Builder Bot", "Builder", "Deploying smart contracts", "active", 89, 97.2),
+                    ("agt_social_sentinel", "Social Sentinel", "Marketing", "Scheduling community campaigns", "idle", 234, 99.1),
+                    ("agt_strat_mind", "Strat Mind", "Strategy", "Optimizing portfolio", "active", 67, 94.3),
+                ],
+            )
+
+        deployments_count = conn.execute("SELECT COUNT(*) FROM deployments").fetchone()[0]
+        if deployments_count == 0:
+            conn.executemany(
+                """
+                INSERT INTO deployments(deployment_id, name, environment, status, region, agents_count, cpu_percent, memory_percent, requests_per_day, created_at, updated_at)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                """,
+                [
+                    ("dep_prod", "Production Cluster", "production", "running", "US East", 12, 45, 62, 2400000),
+                    ("dep_stage", "Staging Environment", "staging", "running", "US West", 5, 28, 41, 156000),
+                    ("dep_dev", "Development Sandbox", "development", "running", "EU Central", 3, 15, 23, 12000),
+                ],
+            )
+
+        workflows_count = conn.execute("SELECT COUNT(*) FROM workflows").fetchone()[0]
+        if workflows_count == 0:
+            conn.executemany(
+                """
+                INSERT INTO workflows(workflow_id, name, status, runs_total, success_rate, updated_at)
+                VALUES(?, ?, ?, ?, ?, datetime('now'))
+                """,
+                [
+                    ("wf_market_scan", "Market Scan", "active", 120, 98.0),
+                    ("wf_deploy_check", "Deployment Health Check", "active", 220, 99.2),
+                    ("wf_content_loop", "Content Loop", "paused", 83, 96.1),
+                ],
+            )
+
+        workflow_runs_count = conn.execute("SELECT COUNT(*) FROM workflow_runs").fetchone()[0]
+        if workflow_runs_count == 0:
+            conn.executemany(
+                """
+                INSERT INTO workflow_runs(run_id, workflow_id, status, duration_ms, started_at)
+                VALUES(?, ?, ?, ?, datetime('now'))
+                """,
+                [
+                    ("run_001", "wf_market_scan", "success", 4200),
+                    ("run_002", "wf_deploy_check", "success", 1900),
+                    ("run_003", "wf_content_loop", "failed", 3100),
+                ],
+            )
+
+        tasks_count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        if tasks_count == 0:
+            conn.executemany(
+                """
+                INSERT INTO tasks(task_id, title, status, priority, assigned_to, updated_at)
+                VALUES(?, ?, ?, ?, ?, datetime('now'))
+                """,
+                [
+                    ("tsk_001", "Analyze token velocity", "queued", "high", "agt_research_alpha"),
+                    ("tsk_002", "Generate campaign copy", "running", "medium", "agt_social_sentinel"),
+                    ("tsk_003", "Backfill payout exports", "completed", "low", "agt_builder_bot"),
+                ],
+            )
+
+        outputs_count = conn.execute("SELECT COUNT(*) FROM outputs").fetchone()[0]
+        if outputs_count == 0:
+            conn.executemany(
+                """
+                INSERT INTO outputs(output_id, title, output_type, size_bytes, download_url, created_at)
+                VALUES(?, ?, ?, ?, ?, datetime('now'))
+                """,
+                [
+                    ("out_001", "Weekly market report", "report", 184320, "/downloads/out_001"),
+                    ("out_002", "Deployment diagnostics", "log", 12048, "/downloads/out_002"),
+                ],
+            )
+
+        posts_count = conn.execute("SELECT COUNT(*) FROM community_posts").fetchone()[0]
+        if posts_count == 0:
+            conn.executemany(
+                """
+                INSERT INTO community_posts(post_id, author_user_id, title, body, likes, created_at)
+                VALUES(?, ?, ?, ?, ?, datetime('now'))
+                """,
+                [
+                    ("post_001", "creator_alpha", "How I scaled my agent", "Playbook for scaling automation.", 32),
+                    ("post_002", "creator_beta", "Prompt QA checklist", "Checklist for stable outputs.", 21),
+                ],
+            )
+
+        activity_count = conn.execute("SELECT COUNT(*) FROM activity_log").fetchone()[0]
+        if activity_count == 0:
+            conn.executemany(
+                """
+                INSERT INTO activity_log(source, action, occurred_at)
+                VALUES(?, ?, datetime('now'))
+                """,
+                [
+                    ("system", "Initial platform dataset seeded"),
+                    ("deployment", "Production cluster health check passed"),
+                ],
+            )
+
         conn.commit()
