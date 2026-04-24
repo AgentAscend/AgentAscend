@@ -17,10 +17,56 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id TEXT UNIQUE NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                email TEXT,
+                password_hash TEXT,
+                display_name TEXT,
+                bio TEXT,
+                avatar_url TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
+
+        user_columns = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        if "email" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        if "password_hash" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        if "display_name" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
+        if "bio" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN bio TEXT")
+        if "avatar_url" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT")
+        if "updated_at" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN updated_at DATETIME")
+
+        conn.execute(
+            """
+            UPDATE users
+            SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)
+            WHERE updated_at IS NULL
+            """
+        )
+
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auth_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_token_hash TEXT UNIQUE NOT NULL,
+                user_id TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                revoked_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id)")
 
         conn.execute(
             """

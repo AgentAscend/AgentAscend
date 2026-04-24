@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.app.db.session import init_db
-from backend.app.routes import creator, health, marketplace, payments, telegram, tools, users
+from backend.app.routes import auth, creator, health, marketplace, payments, telegram, tools, users
 
 app = FastAPI()
 
@@ -64,6 +64,7 @@ def startup():
     init_db()
 
 
+app.include_router(auth.router)
 app.include_router(health.router)
 app.include_router(payments.router)
 app.include_router(tools.router)
