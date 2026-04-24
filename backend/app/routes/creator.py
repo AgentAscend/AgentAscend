@@ -21,6 +21,7 @@ from backend.app.schemas.creator import (
 )
 from backend.app.services.error_response import fail
 from backend.app.services.idempotency import check_or_begin, finalize
+from backend.app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -275,7 +276,9 @@ def list_payouts(creator_user_id: str):
 
 @router.post("/creator/payouts/{request_id}/transition", response_model=PayoutTransitionResponse)
 def transition_payout(request_id: str, payload: PayoutTransitionInput):
+    enforce_rate_limit("payout.transition", payload.actor_user_id, limit=60, window_seconds=300)
     _require_admin(payload.actor_user_id)
+    _validate_transition_input(payload)
 
     scope = f"payout_transition:{request_id}"
     idempotency_key = payload.idempotency_key or f"settle_{uuid.uuid4().hex}"

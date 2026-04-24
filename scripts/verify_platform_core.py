@@ -34,6 +34,18 @@ def _install_fastapi_stub():
 
             return deco
 
+        def put(self, *_args, **_kwargs):
+            def deco(fn):
+                return fn
+
+            return deco
+
+        def delete(self, *_args, **_kwargs):
+            def deco(fn):
+                return fn
+
+            return deco
+
     def Header(default=None):  # noqa: N802
         return default
 

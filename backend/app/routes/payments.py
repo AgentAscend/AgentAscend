@@ -21,6 +21,7 @@ from backend.app.schemas.payments import (
 )
 from backend.app.services.access_service import FEATURE_RANDOM_NUMBER, grant_access
 from backend.app.services.idempotency import check_or_begin, finalize
+from backend.app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -98,6 +99,7 @@ def _payment_reference(user_id: str, token: str) -> str:
 
 @router.post("/payments/create", response_model=PaymentCreateResponse)
 def create_payment(payload: PaymentCreateRequest):
+    enforce_rate_limit("payments.create", payload.user_id, limit=60, window_seconds=300)
     selected_token = _normalize_token(payload.token)
 
     receiver_wallet = os.getenv("SOLANA_RECEIVER_WALLET")
@@ -141,6 +143,7 @@ def create_payment(payload: PaymentCreateRequest):
 
 @router.post("/payments/verify", response_model=PaymentVerifyResponse)
 def verify_payment(payload: PaymentVerifyRequest):
+    enforce_rate_limit("payments.verify", payload.user_id, limit=60, window_seconds=300)
     selected_token = _normalize_token(payload.token)
     _validate_signature_format(payload.tx_signature)
 

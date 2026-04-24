@@ -335,6 +335,174 @@ def init_db():
             """
         )
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS deployment_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                deployment_id TEXT NOT NULL,
+                cpu_percent REAL NOT NULL,
+                memory_percent REAL NOT NULL,
+                p95_latency_ms REAL NOT NULL DEFAULT 0,
+                error_rate REAL NOT NULL DEFAULT 0,
+                recorded_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS workflow_nodes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workflow_id TEXT NOT NULL,
+                node_id TEXT NOT NULL,
+                node_type TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                position_json TEXT NOT NULL,
+                UNIQUE(workflow_id, node_id)
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS task_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                level TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_profile_extras (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT UNIQUE NOT NULL,
+                timezone TEXT,
+                language TEXT,
+                website_url TEXT,
+                location TEXT,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key_id TEXT UNIQUE NOT NULL,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                key_hash TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at DATETIME NOT NULL,
+                last_used_at DATETIME
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_integrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                status TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                updated_at DATETIME NOT NULL,
+                UNIQUE(user_id, provider)
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS staking_positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                position_id TEXT UNIQUE NOT NULL,
+                user_id TEXT NOT NULL,
+                token TEXT NOT NULL,
+                amount REAL NOT NULL,
+                apy REAL NOT NULL,
+                status TEXT NOT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS rewards_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_id TEXT UNIQUE NOT NULL,
+                user_id TEXT NOT NULL,
+                token TEXT NOT NULL,
+                amount REAL NOT NULL,
+                source TEXT NOT NULL,
+                created_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS marketplace_install_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT UNIQUE NOT NULL,
+                listing_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                created_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT UNIQUE NOT NULL,
+                actor_user_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                target_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                metadata_json TEXT NOT NULL,
+                created_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ops_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                alert_id TEXT UNIQUE NOT NULL,
+                severity TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS observability_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                metric_name TEXT NOT NULL,
+                metric_value REAL NOT NULL,
+                labels_json TEXT NOT NULL,
+                recorded_at DATETIME NOT NULL
+            )
+            """
+        )
+
         agents_count = conn.execute("SELECT COUNT(*) FROM agents").fetchone()[0]
         if agents_count == 0:
             conn.executemany(
@@ -442,6 +610,45 @@ def init_db():
                 [
                     ("system", "Initial platform dataset seeded"),
                     ("deployment", "Production cluster health check passed"),
+                ],
+            )
+
+        metrics_count = conn.execute("SELECT COUNT(*) FROM deployment_metrics").fetchone()[0]
+        if metrics_count == 0:
+            conn.executemany(
+                """
+                INSERT INTO deployment_metrics(deployment_id, cpu_percent, memory_percent, p95_latency_ms, error_rate, recorded_at)
+                VALUES(?, ?, ?, ?, ?, datetime('now'))
+                """,
+                [
+                    ("dep_prod", 42, 61, 188, 0.3),
+                    ("dep_stage", 27, 40, 215, 0.5),
+                ],
+            )
+
+        alerts_count = conn.execute("SELECT COUNT(*) FROM ops_alerts").fetchone()[0]
+        if alerts_count == 0:
+            conn.executemany(
+                """
+                INSERT INTO ops_alerts(alert_id, severity, title, message, status, created_at, updated_at)
+                VALUES(?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                """,
+                [
+                    ("alert_001", "warning", "Elevated retry rate", "Payments verify retries above baseline", "open"),
+                    ("alert_002", "info", "Daily backup complete", "SQLite snapshot completed", "resolved"),
+                ],
+            )
+
+        observability_count = conn.execute("SELECT COUNT(*) FROM observability_metrics").fetchone()[0]
+        if observability_count == 0:
+            conn.executemany(
+                """
+                INSERT INTO observability_metrics(metric_name, metric_value, labels_json, recorded_at)
+                VALUES(?, ?, ?, datetime('now'))
+                """,
+                [
+                    ("api_requests_per_min", 72, '{"service":"api"}'),
+                    ("api_error_rate", 0.4, '{"service":"api"}'),
                 ],
             )
 

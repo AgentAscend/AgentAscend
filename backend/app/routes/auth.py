@@ -16,12 +16,14 @@ from backend.app.services.auth_service import (
     revoke_session_by_token_hash,
     update_profile,
 )
+from backend.app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter()
 
 
 @router.post("/auth/signup", response_model=AuthSessionResponse)
 def auth_signup(payload: AuthSignupRequest):
+    enforce_rate_limit("auth.signup", payload.email.lower(), limit=10, window_seconds=300)
     user, session_token, expires_at = create_user_with_password(
         email=payload.email,
         password=payload.password,
@@ -37,6 +39,7 @@ def auth_signup(payload: AuthSignupRequest):
 
 @router.post("/auth/signin", response_model=AuthSessionResponse)
 def auth_signin(payload: AuthSigninRequest):
+    enforce_rate_limit("auth.signin", payload.email.lower(), limit=20, window_seconds=300)
     user, session_token, expires_at = authenticate_and_create_session(
         email=payload.email,
         password=payload.password,
