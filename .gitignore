@@ -6,3 +6,19 @@ backend/app/db/*.db
 backend/app/db/*.db-shm
 backend/app/db/*.db-wal
 hermes_conversation_*.json
+
+# Generated Hermes cron reports
+raw/backend-health/*.md
+raw/daily-status/*.md
+raw/daily-build-command/*.md
+raw/git-status/*.md
+raw/payment-audits/*.md
+raw/wiki-maintenance/*.md
+raw/db-integrity/*.md
+raw/frontend-integration/*.md
+raw/code-quality/*.md
+raw/test-plans/*.md
+raw/documentation-gaps/*.md
+raw/mvp-readiness/*.md
+raw/local-dev-checks/*.md
+raw/memory-maintenance/*.md
