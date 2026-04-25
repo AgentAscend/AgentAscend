@@ -1,0 +1,23 @@
+# AgentAscend scheduler/runtime defaults.
+# Do not commit secrets here. Configure secrets as environment variables.
+# Railway process split:
+#   web worker: FastAPI app (uvicorn backend.app.main:app ...)
+#   scheduler worker: python3 scripts/run_scheduler.py
+# Required before exposing /jobs outside safe local dev:
+#   AGENT_RUNTIME_ADMIN_TOKEN=[REDACTED]
+# Optional scheduler Telegram delivery:
+#   TELEGRAM_BOT_TOKEN=[REDACTED]
+#   TELEGRAM_CHAT_ID=[REDACTED]
+# Backend health check URL:
+#   AGENTASCEND_HEALTH_URL overrides backend_base_url + /health when set.
+scheduler_enabled: true
+allow_auto_spawn_jobs: true
+allow_auto_enable_spawned_jobs: false
+max_job_runs_per_hour: 20
+max_spawned_jobs_per_day: 5
+default_model_tier: cheap
+premium_model_requires_manual_approval: true
+telegram_notifications_enabled: true
+safe_mode: true
+scheduler_poll_seconds: 30
+backend_base_url: http://127.0.0.1:8000

@@ -1,7 +1,217 @@
+import json
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 DB_PATH = Path("backend/app/db/agentascend.db")
+
+
+def utc_now_iso() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
+
+
+def _next_interval_run(seconds: int) -> str:
+    return (datetime.now(UTC).replace(microsecond=0) + timedelta(seconds=seconds)).isoformat()
+
+
+def _init_scheduler_tables(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS scheduled_jobs (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            job_type TEXT NOT NULL UNIQUE,
+            schedule_type TEXT NOT NULL,
+            cron_expression TEXT,
+            interval_seconds INTEGER,
+            enabled INTEGER NOT NULL DEFAULT 0,
+            priority INTEGER NOT NULL DEFAULT 50,
+            model_tier TEXT NOT NULL DEFAULT 'cheap',
+            last_run_at TEXT,
+            next_run_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            created_by TEXT NOT NULL DEFAULT 'system',
+            metadata_json TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS job_runs (
+            id TEXT PRIMARY KEY,
+            scheduled_job_id TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            status TEXT NOT NULL,
+            output_summary TEXT,
+            error_message TEXT,
+            model_used TEXT,
+            tokens_used INTEGER NOT NULL DEFAULT 0,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(scheduled_job_id) REFERENCES scheduled_jobs(id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS agent_findings (
+            id TEXT PRIMARY KEY,
+            source_job_id TEXT,
+            finding_type TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            recommendation TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(source_job_id) REFERENCES scheduled_jobs(id)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next_run ON scheduled_jobs(enabled, next_run_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_job_runs_job_started ON job_runs(scheduled_job_id, started_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_agent_findings_source ON agent_findings(source_job_id)")
+
+
+def _seed_default_scheduled_jobs(conn: sqlite3.Connection) -> None:
+    now = utc_now_iso()
+    defaults = [
+        {
+            "id": "default-backend-health-check",
+            "name": "Backend health check",
+            "description": "Check backend /health and record a short status summary.",
+            "job_type": "backend_health_check",
+            "schedule_type": "interval",
+            "interval_seconds": 15 * 60,
+            "priority": 30,
+            "model_tier": "cheap",
+        },
+        {
+            "id": "default-payment-route-audit",
+            "name": "Payment route audit",
+            "description": "Report-first scan of payment routes for replay/idempotency/security drift.",
+            "job_type": "payment_route_audit",
+            "schedule_type": "interval",
+            "interval_seconds": 6 * 60 * 60,
+            "priority": 80,
+            "model_tier": "standard",
+        },
+        {
+            "id": "default-access-grant-integrity-check",
+            "name": "Access grant integrity check",
+            "description": "Inspect access grant state for duplicates or suspicious records; no mutation.",
+            "job_type": "access_grant_integrity_check",
+            "schedule_type": "interval",
+            "interval_seconds": 6 * 60 * 60,
+            "priority": 75,
+            "model_tier": "cheap",
+        },
+        {
+            "id": "default-failed-payment-replay-review",
+            "name": "Failed payment/replay protection review",
+            "description": "Inspect failed payments and duplicate transaction signatures; no mutation.",
+            "job_type": "failed_payment_replay_review",
+            "schedule_type": "interval",
+            "interval_seconds": 6 * 60 * 60,
+            "priority": 80,
+            "model_tier": "standard",
+        },
+        {
+            "id": "default-wiki-consistency-check",
+            "name": "Wiki/Obsidian consistency check",
+            "description": "Check raw/wiki/system structure and schema headings.",
+            "job_type": "wiki_consistency_check",
+            "schedule_type": "interval",
+            "interval_seconds": 12 * 60 * 60,
+            "priority": 45,
+            "model_tier": "cheap",
+        },
+        {
+            "id": "default-integration-drift-check",
+            "name": "Frontend/backend integration drift check",
+            "description": "Daily report-first drift scan between frontend integration assumptions and backend routes.",
+            "job_type": "integration_drift_check",
+            "schedule_type": "cron",
+            "cron_expression": "0 9 * * *",
+            "priority": 65,
+            "model_tier": "standard",
+        },
+        {
+            "id": "default-git-status-summary",
+            "name": "Git status/change summary",
+            "description": "Summarize git branch and changed files without committing.",
+            "job_type": "git_status_summary",
+            "schedule_type": "interval",
+            "interval_seconds": 4 * 60 * 60,
+            "priority": 35,
+            "model_tier": "cheap",
+        },
+        {
+            "id": "default-todo-fixme-scan",
+            "name": "TODO/FIXME scan",
+            "description": "Scan source files for TODO/FIXME markers and summarize counts.",
+            "job_type": "todo_fixme_scan",
+            "schedule_type": "interval",
+            "interval_seconds": 12 * 60 * 60,
+            "priority": 35,
+            "model_tier": "cheap",
+        },
+        {
+            "id": "default-telegram-status-summary",
+            "name": "Telegram status summary",
+            "description": "Daily status summary with optional Telegram notification if configured.",
+            "job_type": "telegram_status_summary",
+            "schedule_type": "cron",
+            "cron_expression": "0 8 * * *",
+            "priority": 40,
+            "model_tier": "cheap",
+        },
+        {
+            "id": "default-roadmap-review",
+            "name": "AgentAscend roadmap review",
+            "description": "Report-first roadmap review; proposes next steps without editing strategy/payment decisions.",
+            "job_type": "roadmap_review",
+            "schedule_type": "interval",
+            "interval_seconds": 2 * 24 * 60 * 60,
+            "priority": 60,
+            "model_tier": "premium",
+            "enabled": 0,
+            "metadata": {"requires_manual_approval": True, "reason": "premium strategic review is manual by default"},
+        },
+    ]
+    for job in defaults:
+        metadata = job.get("metadata", {}) | {"seeded_default": True, "risk_level": "low"}
+        enabled = job.get("enabled", 1)
+        next_run_at = _next_interval_run(int(job.get("interval_seconds") or 24 * 60 * 60)) if enabled else None
+        conn.execute(
+            """
+            INSERT INTO scheduled_jobs(
+                id, name, description, job_type, schedule_type, cron_expression, interval_seconds,
+                enabled, priority, model_tier, last_run_at, next_run_at, created_at, updated_at,
+                created_by, metadata_json
+            )
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'system', ?)
+            ON CONFLICT(job_type) DO NOTHING
+            """,
+            (
+                job["id"],
+                job["name"],
+                job["description"],
+                job["job_type"],
+                job["schedule_type"],
+                job.get("cron_expression"),
+                job.get("interval_seconds"),
+                enabled,
+                job["priority"],
+                job["model_tier"],
+                next_run_at,
+                now,
+                now,
+                json.dumps(metadata, sort_keys=True),
+            ),
+        )
 
 
 def get_connection():
@@ -67,6 +277,9 @@ def init_db():
         )
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id)")
+
+        _init_scheduler_tables(conn)
+        _seed_default_scheduled_jobs(conn)
 
         conn.execute(
             """

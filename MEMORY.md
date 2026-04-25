@@ -445,6 +445,23 @@ Level 0 — Recommend only
 
 This means Hermes may propose cronjobs and improvements, but should not activate recurring jobs or edit scheduler configs unless Reuben explicitly enables it.
 
+Persistent scheduler foundation:
+
+- Scheduled jobs are stored in the backend SQLite database, not only in Hermes/chat memory.
+- `scheduled_jobs` is the source of truth for job definitions, schedules, model tier, enabled state, and metadata.
+- `job_runs` records every scheduler execution with status, summary, error details, model tier, and metadata.
+- `agent_findings` stores report-first findings created by scheduler checks.
+- The scheduler clock runs separately through `scripts/run_scheduler.py`.
+- Operator CLI controls are available through `scripts/job_admin.py`.
+- FastAPI `/jobs` API routes exist for job controls, but they must be protected with `AGENT_RUNTIME_ADMIN_TOKEN` outside explicit safe local development.
+- In production/Railway, missing `AGENT_RUNTIME_ADMIN_TOKEN` must fail closed.
+- Railway should run the scheduler as a separate worker process, not inside the web process: web = FastAPI, worker = `python3 scripts/run_scheduler.py`.
+- Spawned jobs are disabled by default unless explicitly approved or a safe config enables them.
+- High-risk and premium jobs require manual approval.
+- Future Hermes execution remains report-first: jobs may create findings, summaries, and suggested jobs, but must not directly run destructive Hermes CLI actions.
+- Scheduler Telegram summaries may send only when both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are configured as environment variables.
+- Backend health checks use `AGENTASCEND_HEALTH_URL` when set; otherwise they fall back to the local/backend health URL.
+
 ---
 
 ## 13. Autonomous Task Spawning
