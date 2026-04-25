@@ -1165,7 +1165,8 @@ def marketplace_discover(query: str | None = None, category: str | None = None, 
 
 
 @router.get("/marketplace/licenses")
-def marketplace_licenses(user_id: str):
+def marketplace_licenses(user_id: str, authorization: str | None = Header(default=None)):
+    require_user_access(user_id, authorization)
     with get_connection() as conn:
         rows = conn.execute(
             """
