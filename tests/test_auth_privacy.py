@@ -108,6 +108,42 @@ def test_private_user_reads_allow_owner(client: TestClient, path_template: str):
     assert response.status_code == 200, response.text
 
 
+def test_agent_delete_requires_authentication(client: TestClient):
+    _owner_id, owner_token = _signup(client, "agent-delete-owner@example.com")
+    create_response = client.post(
+        "/agents",
+        json={"name": "Delete Auth Probe", "category": "Research", "description": "Temporary agent"},
+        headers=_auth_header(owner_token),
+    )
+    assert create_response.status_code == 200, create_response.text
+    agent_id = create_response.json()["agent_id"]
+
+    response = client.delete(f"/agents/{agent_id}")
+
+    assert response.status_code == 401, response.text
+    assert response.json()["error"]["code"] == "unauthorized"
+
+
+def test_agent_delete_rejects_cross_user_access(client: TestClient):
+    _owner_id, owner_token = _signup(client, "agent-delete-owner2@example.com")
+    _other_id, other_token = _signup(client, "agent-delete-attacker@example.com")
+    create_response = client.post(
+        "/agents",
+        json={"name": "Delete Owner Probe", "category": "Research", "description": "Temporary agent"},
+        headers=_auth_header(owner_token),
+    )
+    assert create_response.status_code == 200, create_response.text
+    agent_id = create_response.json()["agent_id"]
+
+    response = client.delete(f"/agents/{agent_id}", headers=_auth_header(other_token))
+
+    assert response.status_code == 403, response.text
+    assert response.json()["error"]["code"] == "forbidden"
+
+    owner_response = client.delete(f"/agents/{agent_id}", headers=_auth_header(owner_token))
+    assert owner_response.status_code == 200, owner_response.text
+
+
 def test_public_marketplace_browse_remains_public(client: TestClient):
     response = client.get("/marketplace/browse")
 

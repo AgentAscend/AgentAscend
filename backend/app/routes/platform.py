@@ -138,12 +138,11 @@ def list_agents():
 
 
 @router.post("/agents/{agent_id}/actions", response_model=AgentActionResponse)
-def act_on_agent(agent_id: str, payload: AgentActionRequest):
+def act_on_agent(agent_id: str, payload: AgentActionRequest, authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
     status_by_action = {"start": "active", "resume": "active", "pause": "paused"}
     with get_connection() as conn:
-        exists = conn.execute("SELECT 1 FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
-        if not exists:
-            fail(404, "not_found", "Agent not found")
+        _require_agent_owner(conn, agent_id, actor)
 
         conn.execute(
             "UPDATE agents SET status=?, updated_at=datetime('now') WHERE agent_id=?",
@@ -596,6 +595,32 @@ def _audit(actor_user_id: str, event_type: str, target_type: str, target_id: str
         conn.commit()
 
 
+def _require_agent_owner(conn, agent_id: str, actor_user_id: str) -> None:
+    row = conn.execute(
+        """
+        SELECT a.owner_user_id,
+               (
+                   SELECT ae.actor_user_id
+                   FROM audit_events ae
+                   WHERE ae.target_type='agent'
+                     AND ae.target_id=a.agent_id
+                     AND ae.event_type='agent.create'
+                   ORDER BY ae.created_at ASC, ae.id ASC
+                   LIMIT 1
+               ) AS audit_owner_user_id
+        FROM agents a
+        WHERE a.agent_id=?
+        """,
+        (agent_id,),
+    ).fetchone()
+    if not row:
+        fail(404, "not_found", "Agent not found")
+
+    owner_user_id = row["owner_user_id"] or row["audit_owner_user_id"]
+    if owner_user_id != actor_user_id:
+        fail(403, "forbidden", "Agent does not belong to authenticated user")
+
+
 class AgentCrudInput(BaseModel):
     name: str
     category: str
@@ -611,10 +636,10 @@ def create_agent(payload: AgentCrudInput, authorization: str | None = Header(def
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO agents(agent_id, name, category, description, status, tasks_completed, success_rate, created_at, updated_at)
-            VALUES(?, ?, ?, ?, ?, 0, 0, datetime('now'), datetime('now'))
+            INSERT INTO agents(agent_id, owner_user_id, name, category, description, status, tasks_completed, success_rate, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?, ?, 0, 0, datetime('now'), datetime('now'))
             """,
-            (agent_id, payload.name, payload.category, payload.description, payload.status),
+            (agent_id, actor, payload.name, payload.category, payload.description, payload.status),
         )
         conn.commit()
 
@@ -641,9 +666,7 @@ def get_agent(agent_id: str):
 def patch_agent(agent_id: str, payload: AgentCrudInput, authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)
     with get_connection() as conn:
-        exists = conn.execute("SELECT 1 FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
-        if not exists:
-            fail(404, "not_found", "Agent not found")
+        _require_agent_owner(conn, agent_id, actor)
         conn.execute(
             """
             UPDATE agents
@@ -661,6 +684,7 @@ def patch_agent(agent_id: str, payload: AgentCrudInput, authorization: str | Non
 def delete_agent(agent_id: str, authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)
     with get_connection() as conn:
+        _require_agent_owner(conn, agent_id, actor)
         deleted = conn.execute("DELETE FROM agents WHERE agent_id=?", (agent_id,)).rowcount
         conn.commit()
     if deleted == 0:

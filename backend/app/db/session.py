@@ -184,6 +184,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS agents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 agent_id TEXT UNIQUE NOT NULL,
+                owner_user_id TEXT,
                 name TEXT NOT NULL,
                 category TEXT NOT NULL,
                 description TEXT NOT NULL,
@@ -195,6 +196,11 @@ def init_db():
             )
             """
         )
+
+        agent_columns = {row[1] for row in conn.execute("PRAGMA table_info(agents)").fetchall()}
+        if "owner_user_id" not in agent_columns:
+            conn.execute("ALTER TABLE agents ADD COLUMN owner_user_id TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_agents_owner_user_id ON agents(owner_user_id)")
 
         conn.execute(
             """
