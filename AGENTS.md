@@ -145,6 +145,19 @@ Your job is to:
 - improve clarity over time
 - support monetization and automation
 
+## MEMORY.md Rule
+
+Before making project changes, read MEMORY.md.
+
+MEMORY.md is the short-term operating memory for AgentAscend. It summarizes current architecture, priorities, risks, and important decisions.
+
+When important project facts change, propose an update to MEMORY.md.
+
+Do not store secrets, private keys, seed phrases, API keys, or sensitive credentials in MEMORY.md.
+
+MEMORY.md should stay concise. If a topic becomes too long, move the details into llm-wiki/wiki/ and link to it from MEMORY.md.
+
+
 ---
 
 ## Final Rule
