@@ -147,6 +147,85 @@ def test_jobs_api_allows_safe_local_dev_without_admin_token(monkeypatch):
     assert response.status_code == 200
 
 
+def test_failed_jobs_send_telegram_alert_without_crashing(tmp_path, monkeypatch):
+    import json
+
+    db_path = tmp_path / "agentascend-test.db"
+    original_db_path = session.DB_PATH
+    session.DB_PATH = db_path
+    try:
+        session.init_db()
+
+        from backend.app.services import job_runner
+
+        sent_messages = []
+
+        def fake_send_telegram_notification(message):
+            sent_messages.append(message)
+            return {"enabled": True, "sent": True, "status_code": 200}
+
+        def fake_urlopen(_url, timeout=10):
+            raise TimeoutError("health timed out")
+
+        monkeypatch.setattr(job_runner, "_send_telegram_notification", fake_send_telegram_notification)
+        monkeypatch.setattr(job_runner, "urlopen", fake_urlopen)
+
+        with session.get_connection() as conn:
+            job = conn.execute(
+                "SELECT * FROM scheduled_jobs WHERE job_type = ?",
+                ("backend_health_check",),
+            ).fetchone()
+            assert job is not None
+
+        result = job_runner.run_job_once(job["id"])
+        assert result["status"] == "failed"
+        assert len(sent_messages) == 1
+        assert "AgentAscend scheduler job failed" in sent_messages[0]
+        assert "Backend health check" in sent_messages[0]
+        assert "default-backend-health-check" in sent_messages[0]
+        assert "Backend health failed" in sent_messages[0]
+
+        with session.get_connection() as conn:
+            run = conn.execute(
+                "SELECT metadata_json FROM job_runs WHERE id = ?",
+                (result["run_id"],),
+            ).fetchone()
+        metadata = json.loads(run["metadata_json"])
+        assert metadata["telegram_failure_alert"]["sent"] is True
+    finally:
+        session.DB_PATH = original_db_path
+
+
+def test_successful_non_telegram_jobs_do_not_send_telegram_alert(tmp_path, monkeypatch):
+    db_path = tmp_path / "agentascend-test.db"
+    original_db_path = session.DB_PATH
+    session.DB_PATH = db_path
+    try:
+        session.init_db()
+
+        from backend.app.services import job_runner
+
+        sent_messages = []
+        monkeypatch.setattr(
+            job_runner,
+            "_send_telegram_notification",
+            lambda message: sent_messages.append(message) or {"enabled": True, "sent": True},
+        )
+
+        with session.get_connection() as conn:
+            job = conn.execute(
+                "SELECT * FROM scheduled_jobs WHERE job_type = ?",
+                ("git_status_summary",),
+            ).fetchone()
+            assert job is not None
+
+        result = job_runner.run_job_once(job["id"])
+        assert result["status"] == "success"
+        assert sent_messages == []
+    finally:
+        session.DB_PATH = original_db_path
+
+
 def test_backend_health_uses_agentascend_health_url_and_records_metadata(tmp_path, monkeypatch):
     import json
 

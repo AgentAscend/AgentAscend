@@ -261,6 +261,21 @@ def _send_telegram_notification(message: str) -> dict[str, Any]:
         return {"enabled": True, "sent": False, "error": str(exc)}
 
 
+def _send_failed_job_alert(job: dict[str, Any], run_id: str, summary: str, error: str | None) -> dict[str, Any]:
+    message = "\n".join(
+        [
+            "AgentAscend scheduler job failed",
+            f"Job: {job['name']}",
+            f"Job ID: {job['id']}",
+            f"Job type: {job['job_type']}",
+            f"Run ID: {run_id}",
+            f"Summary: {summary[:1200] or 'No summary recorded'}",
+            f"Error: {(error or 'None')[:1200]}",
+        ]
+    )
+    return _send_telegram_notification(message)
+
+
 JOB_HANDLERS = {
     "backend_health_check": _backend_health_check,
     "payment_route_audit": _payment_route_audit,
@@ -309,6 +324,10 @@ def run_job_once(job_id: str) -> dict[str, Any]:
         summary = f"Job failed: {exc}"
         error = str(exc)
         metadata = {"exception_type": type(exc).__name__}
+
+    if status != "success":
+        metadata = dict(metadata)
+        metadata["telegram_failure_alert"] = _send_failed_job_alert(job, run_id, summary, error)
 
     finished_at = utc_now_iso()
     with get_connection() as conn:
