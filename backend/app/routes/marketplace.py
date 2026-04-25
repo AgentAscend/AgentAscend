@@ -192,6 +192,24 @@ def transition_listing(listing_id: str, payload: ListingTransitionRequest):
     return {**response_payload, "idempotency_replayed": False}
 
 
+@router.delete("/marketplace/listings/{listing_id}")
+def delete_listing(listing_id: str, authorization: str | None = Header(default=None)):
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT creator_user_id FROM marketplace_listings WHERE listing_id = ?",
+            (listing_id,),
+        ).fetchone()
+        if not row:
+            fail(404, "not_found", "Listing not found")
+
+        require_user_access(row["creator_user_id"], authorization)
+        conn.execute("DELETE FROM marketplace_listings WHERE listing_id = ?", (listing_id,))
+        conn.commit()
+
+    logger.info("listing_delete_success listing_id=%s creator_user_id=%s", listing_id, row["creator_user_id"])
+    return {"status": "ok", "deleted": True, "listing_id": listing_id}
+
+
 @router.get("/marketplace/listings", response_model=CreatorListingsResponse)
 def creator_listings(creator_user_id: str, authorization: str | None = Header(default=None)):
     require_user_access(creator_user_id, authorization)

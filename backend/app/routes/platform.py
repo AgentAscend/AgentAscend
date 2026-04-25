@@ -124,14 +124,29 @@ def dashboard_overview():
 
 
 @router.get("/agents", response_model=AgentListResponse)
-def list_agents():
+def list_agents(authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT agent_id, name, category, description, status, tasks_completed, success_rate, created_at, updated_at
-            FROM agents
-            ORDER BY updated_at DESC
-            """
+            SELECT a.agent_id, a.name, a.category, a.description, a.status,
+                   a.tasks_completed, a.success_rate, a.created_at, a.updated_at
+            FROM agents a
+            WHERE COALESCE(
+                a.owner_user_id,
+                (
+                    SELECT ae.actor_user_id
+                    FROM audit_events ae
+                    WHERE ae.target_type='agent'
+                      AND ae.target_id=a.agent_id
+                      AND ae.event_type='agent.create'
+                    ORDER BY ae.created_at ASC, ae.id ASC
+                    LIMIT 1
+                )
+            ) = ?
+            ORDER BY a.updated_at DESC
+            """,
+            (actor,),
         ).fetchall()
 
     return {"status": "ok", "agents": [AgentRecord(**_row_dict(r)) for r in rows]}
@@ -648,8 +663,10 @@ def create_agent(payload: AgentCrudInput, authorization: str | None = Header(def
 
 
 @router.get("/agents/{agent_id}")
-def get_agent(agent_id: str):
+def get_agent(agent_id: str, authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
     with get_connection() as conn:
+        _require_agent_owner(conn, agent_id, actor)
         row = conn.execute(
             """
             SELECT agent_id, name, category, description, status, tasks_completed, success_rate, created_at, updated_at
@@ -677,7 +694,7 @@ def patch_agent(agent_id: str, payload: AgentCrudInput, authorization: str | Non
         )
         conn.commit()
     _audit(actor, "agent.update", "agent", agent_id, {"category": payload.category, "status": payload.status})
-    return get_agent(agent_id)
+    return get_agent(agent_id, authorization=authorization)
 
 
 @router.delete("/agents/{agent_id}")
