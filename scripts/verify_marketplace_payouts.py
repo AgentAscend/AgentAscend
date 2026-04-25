@@ -41,8 +41,12 @@ def _install_fastapi_stub():
     class Request:  # pragma: no cover - compatibility shim
         pass
 
+    def Header(default=None):  # noqa: N802
+        return default
+
     fastapi.HTTPException = HTTPException
     fastapi.APIRouter = APIRouter
+    fastapi.Header = Header
     fastapi.Request = Request
     sys.modules["fastapi"] = fastapi
 
@@ -66,11 +70,16 @@ def _load_module(path: str, name: str):
     return mod
 
 
+def _bearer(token: str) -> str:
+    return f"Bearer {token}"
+
+
 def main():
     HTTPException = _install_fastapi_stub()
 
     sys.path.insert(0, ".")
     from backend.app.db.session import get_connection, init_db
+    from backend.app.services.auth_service import create_session_for_user
 
     init_db()
     marketplace = _load_module("backend/app/routes/marketplace.py", "marketplace_mod")
@@ -84,7 +93,16 @@ def main():
         conn.execute("DELETE FROM marketplace_listings")
         conn.execute("DELETE FROM creator_earnings_events")
         conn.execute("DELETE FROM creator_payout_requests")
+        conn.execute("DELETE FROM auth_sessions")
+        conn.execute("DELETE FROM users WHERE user_id IN ('creator_1', 'admin_1', 'non_admin')")
+        conn.execute("INSERT INTO users (user_id, email, display_name, bio, avatar_url) VALUES (?, ?, ?, '', '')", ("creator_1", "creator_1@example.com", "Creator One"))
+        conn.execute("INSERT INTO users (user_id, email, display_name, bio, avatar_url) VALUES (?, ?, ?, '', '')", ("admin_1", "admin_1@example.com", "Admin One"))
+        conn.execute("INSERT INTO users (user_id, email, display_name, bio, avatar_url) VALUES (?, ?, ?, '', '')", ("non_admin", "non_admin@example.com", "Non Admin"))
         conn.commit()
+
+    _creator_user, creator_token, _ = create_session_for_user("creator_1")
+    _admin_user, admin_token, _ = create_session_for_user("admin_1")
+    _non_admin_user, non_admin_token, _ = create_session_for_user("non_admin")
 
     # 1) Idempotency replay: listing create
     create_payload = marketplace.ListingInput(
@@ -99,8 +117,8 @@ def main():
         tags=["test"],
         idempotency_key="idem_listing_create_1",
     )
-    first = marketplace.create_listing(create_payload)
-    second = marketplace.create_listing(create_payload)
+    first = marketplace.create_listing(create_payload, _bearer(creator_token))
+    second = marketplace.create_listing(create_payload, _bearer(creator_token))
     checks.append(
         (
             "idempotency_listing_create",
@@ -147,7 +165,8 @@ def main():
                 price_token="ASND",
                 status="draft",
                 tags=[],
-            )
+            ),
+            _bearer(creator_token),
         )
         checks.append(("malformed_listing_payload", False, "expected HTTP 400 validation_error"))
     except HTTPException as e:
@@ -182,7 +201,8 @@ def main():
             destination_wallet="DestWallet111",
             note="first payout",
             idempotency_key="idem_payout_request_1",
-        )
+        ),
+        _bearer(creator_token),
     )
 
     # 4) Admin gate check for transition
@@ -195,6 +215,7 @@ def main():
                 actor_user_id="non_admin",
                 idempotency_key="idem_payout_transition_non_admin",
             ),
+            _bearer(non_admin_token),
         )
         checks.append(("admin_gate_transition", False, "expected HTTP 403 forbidden"))
     except HTTPException as e:
@@ -208,9 +229,9 @@ def main():
         )
 
     # 5) Schema assertions for earnings and payouts list
-    summary = creator.earnings_summary("creator_1", "all")
-    events = creator.earnings_events("creator_1", "all")
-    payouts = creator.list_payouts("creator_1")
+    summary = creator.earnings_summary("creator_1", "all", _bearer(creator_token))
+    events = creator.earnings_events("creator_1", "all", _bearer(creator_token))
+    payouts = creator.list_payouts("creator_1", _bearer(creator_token))
 
     checks.append(
         (

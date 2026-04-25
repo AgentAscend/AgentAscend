@@ -237,6 +237,23 @@ def resolve_session(authorization: str | None = Header(default=None)) -> dict:
     }
 
 
+def require_user_access(target_user_id: str, authorization: str | None) -> dict:
+    """Resolve a session and require the caller to own target_user_id or be admin."""
+    auth = resolve_session(authorization)
+    user = auth["user"]
+    if user["user_id"] != target_user_id and user.get("role") != "admin":
+        fail(403, "forbidden", "Authenticated user cannot access another user's data")
+    return auth
+
+
+def require_admin_session(authorization: str | None) -> dict:
+    """Resolve a session and require an admin user."""
+    auth = resolve_session(authorization)
+    if auth["user"].get("role") != "admin":
+        fail(403, "forbidden", "Admin role required")
+    return auth
+
+
 def revoke_session_by_token_hash(token_hash: str) -> None:
     with get_connection() as conn:
         conn.execute(

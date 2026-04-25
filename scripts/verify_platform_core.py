@@ -205,10 +205,10 @@ def main() -> None:
     mark = platform.mark_notification_read("notif_verify_001", _bearer(token))
     checks.append(("notifications_mark_read", mark.get("status") == "ok" and mark.get("is_read") is True, str(mark)))
 
-    balances = platform.token_balances(user_id)
+    balances = platform.token_balances(user_id, _bearer(token))
     checks.append(("token_balances", balances.get("status") == "ok" and "asnd_balance" in balances, str(balances)))
 
-    history = platform.token_history(user_id)
+    history = platform.token_history(user_id, _bearer(token))
     checks.append(("token_history", history.get("status") == "ok" and isinstance(history.get("history", []), list), str(history.get("history", []))))
 
     browse = platform.marketplace_browse()
@@ -246,10 +246,10 @@ def main() -> None:
     install = platform.install_listing(listing["listing_id"], platform.InstallListingRequest(user_id=user_id))
     checks.append(("install_listing", install.get("status") == "ok" and install.get("entitlement").user_id == user_id, str(install)))
 
-    entitlements = platform.get_entitlements(user_id)
+    entitlements = platform.get_entitlements(user_id, _bearer(token))
     checks.append(("entitlements", entitlements.get("status") == "ok" and len(entitlements.get("entitlements", [])) >= 1, str(entitlements)))
 
-    payout_totals = platform.creator_payout_totals("creator_1")
+    payout_totals = platform.creator_payout_totals(user_id, _bearer(token))
     checks.append(("payout_totals", payout_totals.get("status") == "ok" and "pending_amount" in payout_totals, str(payout_totals)))
 
     failed = [c for c in checks if not c[1]]

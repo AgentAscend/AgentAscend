@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from pydantic import ValidationError
 
 from backend.app.db.session import get_connection
@@ -20,6 +20,7 @@ from backend.app.schemas.creator import (
     WindowType,
 )
 from backend.app.services.error_response import fail
+from backend.app.services.auth_service import require_admin_session, require_user_access
 from backend.app.services.idempotency import check_or_begin, finalize
 from backend.app.services.rate_limit import enforce_rate_limit
 
@@ -105,7 +106,8 @@ def _require_admin(actor_user_id: str) -> None:
 
 
 @router.get("/creator/earnings/summary", response_model=EarningsSummaryResponse)
-def earnings_summary(creator_user_id: str, window: WindowType = "30d"):
+def earnings_summary(creator_user_id: str, window: WindowType = "30d", authorization: str | None = Header(default=None)):
+    require_user_access(creator_user_id, authorization)
     gross_amount, fee_amount, creator_amount = _sum_earnings(creator_user_id, window)
     paid_out = _sum_paid_out(creator_user_id)
     net_available = creator_amount - paid_out
@@ -125,12 +127,13 @@ def earnings_summary(creator_user_id: str, window: WindowType = "30d"):
 # Frontend compatibility alias (v0 contract):
 # GET /marketplace/creators/{creator_user_id}/earnings/summary
 @router.get("/marketplace/creators/{creator_user_id}/earnings/summary", response_model=EarningsSummaryResponse)
-def marketplace_creator_earnings_summary(creator_user_id: str, window: WindowType = "30d"):
-    return earnings_summary(creator_user_id=creator_user_id, window=window)
+def marketplace_creator_earnings_summary(creator_user_id: str, window: WindowType = "30d", authorization: str | None = Header(default=None)):
+    return earnings_summary(creator_user_id=creator_user_id, window=window, authorization=authorization)
 
 
 @router.get("/creator/earnings/events", response_model=EarningsEventsResponse)
-def earnings_events(creator_user_id: str, window: WindowType = "30d"):
+def earnings_events(creator_user_id: str, window: WindowType = "30d", authorization: str | None = Header(default=None)):
+    require_user_access(creator_user_id, authorization)
     extra_sql, extra_params = _event_where_clause(window)
     with get_connection() as conn:
         rows = conn.execute(
@@ -175,12 +178,13 @@ def earnings_events(creator_user_id: str, window: WindowType = "30d"):
 # Frontend compatibility alias (v0 contract):
 # GET /marketplace/creators/{creator_user_id}/earnings/events
 @router.get("/marketplace/creators/{creator_user_id}/earnings/events", response_model=EarningsEventsResponse)
-def marketplace_creator_earnings_events(creator_user_id: str, window: WindowType = "30d"):
-    return earnings_events(creator_user_id=creator_user_id, window=window)
+def marketplace_creator_earnings_events(creator_user_id: str, window: WindowType = "30d", authorization: str | None = Header(default=None)):
+    return earnings_events(creator_user_id=creator_user_id, window=window, authorization=authorization)
 
 
 @router.post("/creator/payouts/request", response_model=PayoutRequestResponse)
-def request_payout(payload: PayoutRequestInput):
+def request_payout(payload: PayoutRequestInput, authorization: str | None = Header(default=None)):
+    require_user_access(payload.creator_user_id, authorization)
     idempotency_key = payload.idempotency_key or f"payout_{uuid.uuid4().hex}"
     scope = f"payout_request:{payload.creator_user_id}"
     payload_for_idempotency = payload.model_dump(mode="json")
@@ -255,7 +259,8 @@ def request_payout(payload: PayoutRequestInput):
 
 
 @router.get("/creator/payouts", response_model=PayoutListResponse)
-def list_payouts(creator_user_id: str):
+def list_payouts(creator_user_id: str, authorization: str | None = Header(default=None)):
+    require_user_access(creator_user_id, authorization)
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -275,7 +280,8 @@ def list_payouts(creator_user_id: str):
 
 
 @router.post("/creator/payouts/{request_id}/transition", response_model=PayoutTransitionResponse)
-def transition_payout(request_id: str, payload: PayoutTransitionInput):
+def transition_payout(request_id: str, payload: PayoutTransitionInput, authorization: str | None = Header(default=None)):
+    require_admin_session(authorization)
     enforce_rate_limit("payout.transition", payload.actor_user_id, limit=60, window_seconds=300)
     _require_admin(payload.actor_user_id)
     _validate_transition_input(payload)
@@ -404,7 +410,7 @@ def _pydantic_validation_message(exc: ValidationError) -> str:
 # Frontend compatibility alias (v0 contract):
 # POST /marketplace/creators/{creator_user_id}/payouts/request
 @router.post("/marketplace/creators/{creator_user_id}/payouts/request")
-def marketplace_request_payout(creator_user_id: str, payload: dict):
+def marketplace_request_payout(creator_user_id: str, payload: dict, authorization: str | None = Header(default=None)):
     try:
         normalized = PayoutRequestInput(
             creator_user_id=creator_user_id,
@@ -417,15 +423,15 @@ def marketplace_request_payout(creator_user_id: str, payload: dict):
     except ValidationError as exc:
         fail(400, "validation_error", _pydantic_validation_message(exc))
 
-    response = request_payout(normalized)
+    response = request_payout(normalized, authorization=authorization)
     return {"request": _legacy_payout_payload(response["payout"])}
 
 
 # Frontend compatibility alias (v0 contract):
 # GET /marketplace/creators/{creator_user_id}/payouts
 @router.get("/marketplace/creators/{creator_user_id}/payouts")
-def marketplace_list_payouts(creator_user_id: str):
-    response = list_payouts(creator_user_id)
+def marketplace_list_payouts(creator_user_id: str, authorization: str | None = Header(default=None)):
+    response = list_payouts(creator_user_id, authorization=authorization)
     return {"requests": [_legacy_payout_payload(p) for p in response["payouts"]]}
 
 
@@ -437,7 +443,7 @@ def _actor_from_payload(payload: dict) -> str:
 
 # Frontend compatibility aliases (v0 settlement contract)
 @router.post("/marketplace/payouts/{request_id}/approve")
-def marketplace_approve_payout(request_id: str, payload: dict):
+def marketplace_approve_payout(request_id: str, payload: dict, authorization: str | None = Header(default=None)):
     try:
         transition_input = PayoutTransitionInput(
             action="approve",
@@ -448,12 +454,12 @@ def marketplace_approve_payout(request_id: str, payload: dict):
     except ValidationError as exc:
         fail(400, "validation_error", _pydantic_validation_message(exc))
 
-    response = transition_payout(request_id, transition_input)
+    response = transition_payout(request_id, transition_input, authorization=authorization)
     return {"success": True, "request": _legacy_payout_payload(response["payout"])}
 
 
 @router.post("/marketplace/payouts/{request_id}/reject")
-def marketplace_reject_payout(request_id: str, payload: dict):
+def marketplace_reject_payout(request_id: str, payload: dict, authorization: str | None = Header(default=None)):
     try:
         transition_input = PayoutTransitionInput(
             action="reject",
@@ -464,12 +470,12 @@ def marketplace_reject_payout(request_id: str, payload: dict):
     except ValidationError as exc:
         fail(400, "validation_error", _pydantic_validation_message(exc))
 
-    response = transition_payout(request_id, transition_input)
+    response = transition_payout(request_id, transition_input, authorization=authorization)
     return {"success": True, "request": _legacy_payout_payload(response["payout"])}
 
 
 @router.post("/marketplace/payouts/{request_id}/mark-paid")
-def marketplace_mark_paid_payout(request_id: str, payload: dict):
+def marketplace_mark_paid_payout(request_id: str, payload: dict, authorization: str | None = Header(default=None)):
     try:
         transition_input = PayoutTransitionInput(
             action="mark_paid",
@@ -481,5 +487,5 @@ def marketplace_mark_paid_payout(request_id: str, payload: dict):
     except ValidationError as exc:
         fail(400, "validation_error", _pydantic_validation_message(exc))
 
-    response = transition_payout(request_id, transition_input)
+    response = transition_payout(request_id, transition_input, authorization=authorization)
     return {"success": True, "request": _legacy_payout_payload(response["payout"])}

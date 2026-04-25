@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 
 from backend.app.db.session import get_connection
 from backend.app.schemas.marketplace import (
@@ -16,6 +16,7 @@ from backend.app.schemas.marketplace import (
     LiveListingsResponse,
 )
 from backend.app.services.error_response import fail
+from backend.app.services.auth_service import require_user_access
 from backend.app.services.idempotency import check_or_begin, finalize
 
 router = APIRouter()
@@ -59,7 +60,8 @@ def _validate_listing_payload(payload: ListingInput) -> None:
 
 
 @router.post("/marketplace/listings", response_model=ListingCreateResponse)
-def create_listing(payload: ListingInput):
+def create_listing(payload: ListingInput, authorization: str | None = Header(default=None)):
+    require_user_access(payload.creator_user_id, authorization)
     _validate_listing_payload(payload)
 
     idempotency_key = payload.idempotency_key or f"listing_{uuid.uuid4().hex}"
@@ -191,7 +193,8 @@ def transition_listing(listing_id: str, payload: ListingTransitionRequest):
 
 
 @router.get("/marketplace/listings", response_model=CreatorListingsResponse)
-def creator_listings(creator_user_id: str):
+def creator_listings(creator_user_id: str, authorization: str | None = Header(default=None)):
+    require_user_access(creator_user_id, authorization)
     with get_connection() as conn:
         rows = conn.execute(
             """

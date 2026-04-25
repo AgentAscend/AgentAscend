@@ -53,7 +53,7 @@ from backend.app.schemas.platform import (
     WorkflowRecord,
     WorkflowRunRecord,
 )
-from backend.app.services.auth_service import resolve_session, update_profile
+from backend.app.services.auth_service import require_user_access, resolve_session, update_profile
 from backend.app.services.error_response import fail
 
 router = APIRouter()
@@ -437,7 +437,8 @@ def mark_notification_read(notification_id: str, authorization: str | None = Hea
 
 
 @router.get("/token/balances", response_model=TokenBalancesResponse)
-def token_balances(user_id: str):
+def token_balances(user_id: str, authorization: str | None = Header(default=None)):
+    require_user_access(user_id, authorization)
     with get_connection() as conn:
         payments = conn.execute(
             "SELECT COALESCE(SUM(amount), 0) AS total_paid FROM payments WHERE user_id=? AND status='paid'",
@@ -460,7 +461,8 @@ def token_balances(user_id: str):
 
 
 @router.get("/token/history", response_model=TokenHistoryResponse)
-def token_history(user_id: str):
+def token_history(user_id: str, authorization: str | None = Header(default=None)):
+    require_user_access(user_id, authorization)
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -507,7 +509,8 @@ def marketplace_browse(category: str | None = None):
 
 
 @router.get("/marketplace/entitlements", response_model=EntitlementsResponse)
-def get_entitlements(user_id: str):
+def get_entitlements(user_id: str, authorization: str | None = Header(default=None)):
+    require_user_access(user_id, authorization)
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -550,7 +553,8 @@ def install_listing(listing_id: str, payload: InstallListingRequest):
 
 
 @router.get("/marketplace/creators/{creator_user_id}/payouts/totals", response_model=CreatorPayoutTotalsResponse)
-def creator_payout_totals(creator_user_id: str):
+def creator_payout_totals(creator_user_id: str, authorization: str | None = Header(default=None)):
+    require_user_access(creator_user_id, authorization)
     with get_connection() as conn:
         pending = conn.execute(
             "SELECT COALESCE(SUM(requested_amount), 0) AS amount FROM creator_payout_requests WHERE creator_user_id=? AND status='pending'",
@@ -1088,7 +1092,8 @@ def patch_integration(payload: IntegrationPatchInput, authorization: str | None 
 
 
 @router.get("/token/staking/positions")
-def token_staking_positions(user_id: str):
+def token_staking_positions(user_id: str, authorization: str | None = Header(default=None)):
+    require_user_access(user_id, authorization)
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -1101,7 +1106,8 @@ def token_staking_positions(user_id: str):
 
 
 @router.get("/token/rewards/ledger")
-def token_rewards_ledger(user_id: str):
+def token_rewards_ledger(user_id: str, authorization: str | None = Header(default=None)):
+    require_user_access(user_id, authorization)
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -1114,10 +1120,11 @@ def token_rewards_ledger(user_id: str):
 
 
 @router.get("/token/transactions")
-def token_transactions(user_id: str):
-    history = token_history(user_id)["history"]
-    rewards = token_rewards_ledger(user_id)["entries"]
-    payouts = creator_payout_totals(user_id)
+def token_transactions(user_id: str, authorization: str | None = Header(default=None)):
+    require_user_access(user_id, authorization)
+    history = token_history(user_id, authorization=authorization)["history"]
+    rewards = token_rewards_ledger(user_id, authorization=authorization)["entries"]
+    payouts = creator_payout_totals(user_id, authorization=authorization)
     return {
         "status": "ok",
         "user_id": user_id,
