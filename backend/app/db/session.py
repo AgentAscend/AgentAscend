@@ -175,6 +175,124 @@ def _init_scheduler_tables(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_agent_findings_source ON agent_findings(source_job_id)")
 
 
+def _init_execution_ledger_tables(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS executions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            execution_id TEXT UNIQUE NOT NULL,
+            source_type TEXT,
+            source_id TEXT,
+            user_id TEXT,
+            agent_id TEXT,
+            status TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_steps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            step_id TEXT UNIQUE NOT NULL,
+            execution_id TEXT NOT NULL,
+            step_order INTEGER NOT NULL DEFAULT 0,
+            step_type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id TEXT UNIQUE NOT NULL,
+            execution_id TEXT NOT NULL,
+            step_id TEXT,
+            event_type TEXT NOT NULL,
+            level TEXT NOT NULL DEFAULT 'info',
+            message TEXT,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+            FOREIGN KEY(step_id) REFERENCES execution_steps(step_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_artifacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            artifact_id TEXT UNIQUE NOT NULL,
+            execution_id TEXT NOT NULL,
+            step_id TEXT,
+            artifact_type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            uri TEXT,
+            content_text TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+            FOREIGN KEY(step_id) REFERENCES execution_steps(step_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_costs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cost_id TEXT UNIQUE NOT NULL,
+            execution_id TEXT NOT NULL,
+            step_id TEXT,
+            provider TEXT,
+            model TEXT,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            cost_amount REAL NOT NULL DEFAULT 0,
+            cost_currency TEXT NOT NULL DEFAULT 'USD',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+            FOREIGN KEY(step_id) REFERENCES execution_steps(step_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_approvals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            approval_id TEXT UNIQUE NOT NULL,
+            execution_id TEXT NOT NULL,
+            step_id TEXT,
+            approval_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            requested_by TEXT,
+            approved_by TEXT,
+            requested_at TEXT NOT NULL,
+            decided_at TEXT,
+            reason TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+            FOREIGN KEY(step_id) REFERENCES execution_steps(step_id)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_executions_status_started ON executions(status, started_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_executions_user_started ON executions(user_id, started_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_execution_steps_execution_order ON execution_steps(execution_id, step_order)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_execution_events_execution_created ON execution_events(execution_id, created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_execution_artifacts_execution ON execution_artifacts(execution_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_execution_costs_execution ON execution_costs(execution_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_execution_approvals_execution_status ON execution_approvals(execution_id, status)")
+
+
 def _seed_default_scheduled_jobs(conn: sqlite3.Connection) -> None:
     now = utc_now_iso()
     defaults = [
@@ -392,6 +510,7 @@ def _init_sqlite_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id)")
 
         _init_scheduler_tables(conn)
+        _init_execution_ledger_tables(conn)
         _seed_default_scheduled_jobs(conn)
 
         conn.execute(
@@ -998,6 +1117,81 @@ _POSTGRES_TABLE_DDL = [
         created_at TEXT NOT NULL,
         metadata_json TEXT NOT NULL DEFAULT '{}'
     )""",
+    """CREATE TABLE IF NOT EXISTS executions (
+        id SERIAL PRIMARY KEY,
+        execution_id TEXT UNIQUE NOT NULL,
+        source_type TEXT,
+        source_id TEXT,
+        user_id TEXT,
+        agent_id TEXT,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}'
+    )""",
+    """CREATE TABLE IF NOT EXISTS execution_steps (
+        id SERIAL PRIMARY KEY,
+        step_id TEXT UNIQUE NOT NULL,
+        execution_id TEXT NOT NULL REFERENCES executions(execution_id),
+        step_order INTEGER NOT NULL DEFAULT 0,
+        step_type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}'
+    )""",
+    """CREATE TABLE IF NOT EXISTS execution_events (
+        id SERIAL PRIMARY KEY,
+        event_id TEXT UNIQUE NOT NULL,
+        execution_id TEXT NOT NULL REFERENCES executions(execution_id),
+        step_id TEXT REFERENCES execution_steps(step_id),
+        event_type TEXT NOT NULL,
+        level TEXT NOT NULL DEFAULT 'info',
+        message TEXT,
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS execution_artifacts (
+        id SERIAL PRIMARY KEY,
+        artifact_id TEXT UNIQUE NOT NULL,
+        execution_id TEXT NOT NULL REFERENCES executions(execution_id),
+        step_id TEXT REFERENCES execution_steps(step_id),
+        artifact_type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        uri TEXT,
+        content_text TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS execution_costs (
+        id SERIAL PRIMARY KEY,
+        cost_id TEXT UNIQUE NOT NULL,
+        execution_id TEXT NOT NULL REFERENCES executions(execution_id),
+        step_id TEXT REFERENCES execution_steps(step_id),
+        provider TEXT,
+        model TEXT,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cost_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+        cost_currency TEXT NOT NULL DEFAULT 'USD',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS execution_approvals (
+        id SERIAL PRIMARY KEY,
+        approval_id TEXT UNIQUE NOT NULL,
+        execution_id TEXT NOT NULL REFERENCES executions(execution_id),
+        step_id TEXT REFERENCES execution_steps(step_id),
+        approval_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        requested_by TEXT,
+        approved_by TEXT,
+        requested_at TEXT NOT NULL,
+        decided_at TEXT,
+        reason TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}'
+    )""",
     """CREATE TABLE IF NOT EXISTS marketplace_listings (
         id SERIAL PRIMARY KEY,
         listing_id TEXT UNIQUE NOT NULL,
@@ -1261,6 +1455,13 @@ _POSTGRES_INDEX_DDL = [
     "CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next_run ON scheduled_jobs(enabled, next_run_at)",
     "CREATE INDEX IF NOT EXISTS idx_job_runs_job_started ON job_runs(scheduled_job_id, started_at)",
     "CREATE INDEX IF NOT EXISTS idx_agent_findings_source ON agent_findings(source_job_id)",
+    "CREATE INDEX IF NOT EXISTS idx_executions_status_started ON executions(status, started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_executions_user_started ON executions(user_id, started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_execution_steps_execution_order ON execution_steps(execution_id, step_order)",
+    "CREATE INDEX IF NOT EXISTS idx_execution_events_execution_created ON execution_events(execution_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_execution_artifacts_execution ON execution_artifacts(execution_id)",
+    "CREATE INDEX IF NOT EXISTS idx_execution_costs_execution ON execution_costs(execution_id)",
+    "CREATE INDEX IF NOT EXISTS idx_execution_approvals_execution_status ON execution_approvals(execution_id, status)",
     "CREATE INDEX IF NOT EXISTS idx_agents_owner_user_id ON agents(owner_user_id)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at)",
     "CREATE INDEX IF NOT EXISTS idx_outputs_task_user ON outputs(task_id, user_id)",
