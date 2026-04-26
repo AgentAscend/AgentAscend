@@ -1,9 +1,20 @@
 import json
+import os
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-DB_PATH = Path("backend/app/db/agentascend.db")
+
+def _default_db_path() -> Path:
+    configured = os.getenv("AGENTASCEND_DB_PATH") or os.getenv("DATABASE_PATH") or os.getenv("SQLITE_PATH")
+    if configured:
+        return Path(configured)
+    if os.getenv("RAILWAY_SERVICE_ID") and Path("/data").exists():
+        return Path("/data/agentascend.db")
+    return Path("backend/app/db/agentascend.db")
+
+
+DB_PATH = _default_db_path()
 
 
 def utc_now_iso() -> str:
@@ -225,6 +236,7 @@ def _seed_default_scheduled_jobs(conn: sqlite3.Connection) -> None:
 
 
 def get_connection():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
