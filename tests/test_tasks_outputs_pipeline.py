@@ -220,6 +220,16 @@ def _events_for_execution(execution_id: str):
         ).fetchall()
 
 
+def _artifacts_for_execution(execution_id: str):
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM execution_artifacts WHERE execution_id=? ORDER BY id ASC",
+            (execution_id,),
+        ).fetchall()
+
+
 def test_scheduler_worker_does_not_write_lifecycle_events_when_execution_ledger_disabled(client: TestClient, monkeypatch):
     monkeypatch.delenv("EXECUTION_LEDGER_ENABLED", raising=False)
     _user_id, token = _signup(client, "tasks-ledger-worker-disabled@example.com")
@@ -339,6 +349,111 @@ def test_scheduler_worker_skips_lifecycle_events_when_execution_row_is_missing(c
             "SELECT COUNT(*) AS count FROM execution_events WHERE event_type IN ('execution_started', 'execution_completed', 'execution_failed')"
         ).fetchone()["count"]
     assert lifecycle_events_count == 0
+
+
+def test_scheduler_worker_does_not_write_output_artifact_when_execution_ledger_disabled(client: TestClient, monkeypatch):
+    monkeypatch.delenv("EXECUTION_LEDGER_ENABLED", raising=False)
+    _user_id, token = _signup(client, "tasks-ledger-output-disabled@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Disabled output artifact task", "type": "analysis", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+
+    from backend.app.services.job_runner import run_job_once
+
+    run = run_job_once(_task_worker_job_id())
+    assert run["status"] == "success"
+
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        artifacts_count = conn.execute("SELECT COUNT(*) AS count FROM execution_artifacts").fetchone()["count"]
+        output_created_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM execution_events WHERE event_type='output_created'"
+        ).fetchone()["count"]
+        outputs_count = conn.execute("SELECT COUNT(*) AS count FROM outputs").fetchone()["count"]
+
+    assert outputs_count == 1
+    assert artifacts_count == 0
+    assert output_created_count == 0
+
+
+def test_scheduler_worker_writes_output_artifact_and_event_when_execution_ledger_enabled(client: TestClient, monkeypatch):
+    monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+    _user_id, token = _signup(client, "tasks-ledger-output-enabled@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Enabled output artifact task", "type": "analysis", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    from backend.app.services.job_runner import run_job_once
+
+    run = run_job_once(_task_worker_job_id())
+    assert run["status"] == "success"
+
+    execution = _execution_for_task(task_id)
+    assert execution is not None
+    artifacts = _artifacts_for_execution(execution["execution_id"])
+    assert len(artifacts) == 1
+    artifact = artifacts[0]
+    assert artifact["artifact_type"] == "output"
+    assert artifact["content_text"] is None
+    artifact_metadata = json.loads(artifact["metadata_json"])
+    assert artifact_metadata["task_id"] == task_id
+    assert artifact_metadata["output_id"]
+    assert artifact_metadata["output_type"] == "text"
+    assert artifact_metadata["status"] == "completed"
+    assert artifact_metadata["source_type"] == "output"
+    assert artifact_metadata["source_id"] == artifact_metadata["output_id"]
+    assert "content" not in artifact_metadata
+    assert "text" not in artifact_metadata
+
+    events = _events_for_execution(execution["execution_id"])
+    output_events = [event for event in events if event["event_type"] == "output_created"]
+    assert len(output_events) == 1
+    payload = json.loads(output_events[0]["payload_json"])
+    assert payload["task_id"] == task_id
+    assert payload["output_id"] == artifact_metadata["output_id"]
+    assert payload["timestamp"]
+    assert "content" not in payload
+    assert "text" not in payload
+
+
+def test_scheduler_worker_skips_output_artifact_when_execution_row_is_missing(client: TestClient, monkeypatch):
+    monkeypatch.delenv("EXECUTION_LEDGER_ENABLED", raising=False)
+    _user_id, token = _signup(client, "tasks-ledger-output-missing@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Missing execution output task", "type": "analysis", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+    assert _execution_for_task(task_id) is None
+    monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+
+    from backend.app.services.job_runner import run_job_once
+
+    run = run_job_once(_task_worker_job_id())
+    assert run["status"] == "success"
+
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        outputs_count = conn.execute("SELECT COUNT(*) AS count FROM outputs WHERE task_id=?", (task_id,)).fetchone()["count"]
+        artifacts_count = conn.execute("SELECT COUNT(*) AS count FROM execution_artifacts").fetchone()["count"]
+        output_created_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM execution_events WHERE event_type='output_created'"
+        ).fetchone()["count"]
+
+    assert outputs_count == 1
+    assert artifacts_count == 0
+    assert output_created_count == 0
 
 
 def test_scheduler_worker_completes_queued_task_and_creates_output(client: TestClient):

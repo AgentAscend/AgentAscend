@@ -221,6 +221,7 @@ def attach_execution_artifact(
     source_id: str | None = None,
     payload: dict[str, Any] | None = None,
     artifact_id: str | None = None,
+    db: Any | None = None,
 ) -> dict[str, Any]:
     artifact_id = artifact_id or _new_id("art")
     artifact_metadata = dict(metadata or {})
@@ -230,7 +231,8 @@ def attach_execution_artifact(
         artifact_metadata["source_id"] = source_id
     if payload is not None:
         artifact_metadata["payload"] = payload
-    with get_connection() as conn:
+
+    def insert(conn: Any) -> dict[str, Any] | None:
         conn.execute(
             """
             INSERT INTO execution_artifacts(artifact_id, execution_id, step_id, artifact_type, name, uri, content_text, metadata_json, created_at)
@@ -238,8 +240,19 @@ def attach_execution_artifact(
             """,
             (artifact_id, execution_id, step_id, artifact_type, name, uri, content_text, _json_dumps(artifact_metadata), utc_now_iso()),
         )
-        conn.commit()
-    return _get_required_by_id("execution_artifacts", "artifact_id", artifact_id)
+        row = conn.execute("SELECT * FROM execution_artifacts WHERE artifact_id = ?", (artifact_id,)).fetchone()
+        return _row_to_record(row) if row is not None else None
+
+    if db is not None:
+        record = insert(db)
+    else:
+        with get_connection() as conn:
+            insert(conn)
+            conn.commit()
+        record = _get_required_by_id("execution_artifacts", "artifact_id", artifact_id)
+    if record is None:
+        raise RuntimeError(f"Execution artifact was not created: {artifact_id}")
+    return record
 
 
 def list_execution_artifacts(execution_id: str) -> list[dict[str, Any]]:

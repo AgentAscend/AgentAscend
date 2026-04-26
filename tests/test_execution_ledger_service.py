@@ -125,6 +125,43 @@ def test_attach_execution_artifact_creates_artifact(tmp_path):
         session.DB_PATH = original_db_path
 
 
+def test_attach_execution_artifact_uses_caller_owned_db_without_committing(tmp_path):
+    original_db_path = _use_temp_db(tmp_path / "execution-ledger-artifact-db.db")
+    try:
+        execution = execution_ledger.create_execution(user_id="user_1")
+
+        with session.get_connection() as conn:
+            artifact = execution_ledger.attach_execution_artifact(
+                execution_id=execution["execution_id"],
+                artifact_type="output",
+                name="Task output",
+                uri="output://out_db",
+                metadata={"task_id": "tsk_db", "output_id": "out_db", "output_type": "text", "status": "completed"},
+                source_type="output",
+                source_id="out_db",
+                db=conn,
+            )
+            assert artifact["artifact_id"].startswith("art_")
+            assert artifact["metadata"] == {
+                "output_id": "out_db",
+                "output_type": "text",
+                "source_id": "out_db",
+                "source_type": "output",
+                "status": "completed",
+                "task_id": "tsk_db",
+            }
+            visible_inside_transaction = conn.execute(
+                "SELECT COUNT(*) AS count FROM execution_artifacts WHERE artifact_id=?",
+                (artifact["artifact_id"],),
+            ).fetchone()["count"]
+            assert visible_inside_transaction == 1
+            conn.rollback()
+
+        assert execution_ledger.list_execution_artifacts(execution["execution_id"]) == []
+    finally:
+        session.DB_PATH = original_db_path
+
+
 def test_record_execution_cost_creates_cost(tmp_path):
     original_db_path = _use_temp_db(tmp_path / "execution-ledger-cost.db")
     try:

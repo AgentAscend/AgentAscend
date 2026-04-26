@@ -248,10 +248,14 @@ def _safe_error_message(exc: Exception) -> str:
     return str(exc)[:500]
 
 
-def _append_task_lifecycle_event(conn: Any, task_id: str, event_type: str, payload: dict[str, Any], new_execution_status: str | None = None) -> None:
+def _execution_for_task(conn: Any, task_id: str) -> dict[str, Any] | None:
     if not execution_ledger.is_execution_ledger_enabled():
-        return
-    execution = execution_ledger.get_execution_by_source("task", task_id, db=conn)
+        return None
+    return execution_ledger.get_execution_by_source("task", task_id, db=conn)
+
+
+def _append_task_lifecycle_event(conn: Any, task_id: str, event_type: str, payload: dict[str, Any], new_execution_status: str | None = None) -> None:
+    execution = _execution_for_task(conn, task_id)
     if execution is None:
         return
     execution_id = execution["execution_id"]
@@ -265,6 +269,35 @@ def _append_task_lifecycle_event(conn: Any, task_id: str, event_type: str, paylo
         execution_id=execution_id,
         event_type=event_type,
         payload=payload,
+        db=conn,
+    )
+
+
+def _append_task_output_artifact(conn: Any, task_id: str, output_id: str, output_type: str, status: str) -> None:
+    execution = _execution_for_task(conn, task_id)
+    if execution is None:
+        return
+    execution_id = execution["execution_id"]
+    metadata = {
+        "task_id": task_id,
+        "output_id": output_id,
+        "output_type": output_type,
+        "status": status,
+    }
+    execution_ledger.attach_execution_artifact(
+        execution_id=execution_id,
+        artifact_type="output",
+        name="Task output",
+        uri=f"output://{output_id}",
+        metadata=metadata,
+        source_type="output",
+        source_id=output_id,
+        db=conn,
+    )
+    execution_ledger.append_execution_event(
+        execution_id=execution_id,
+        event_type="output_created",
+        payload={"task_id": task_id, "output_id": output_id, "timestamp": utc_now_iso()},
         db=conn,
     )
 
@@ -349,6 +382,7 @@ def _task_queue_worker(_job: dict[str, Any]) -> dict[str, Any]:
                     "INSERT INTO task_logs(task_id, level, message, created_at) VALUES (?, 'info', ?, datetime('now'))",
                     (task_id, f"Task completed; output created: {output_id}"),
                 )
+                _append_task_output_artifact(conn, task_id, output_id, "text", "completed")
                 _append_task_lifecycle_event(
                     conn,
                     task_id,
