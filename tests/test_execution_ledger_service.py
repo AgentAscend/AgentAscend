@@ -181,8 +181,8 @@ def test_request_execution_approval_creates_approval(tmp_path):
 def test_list_helpers_scope_rows_to_execution_or_user(tmp_path):
     original_db_path = _use_temp_db(tmp_path / "execution-ledger-list.db")
     try:
-        user_execution = execution_ledger.create_execution(user_id="user_1")
-        other_execution = execution_ledger.create_execution(user_id="user_2")
+        user_execution = execution_ledger.create_execution(user_id="user_1", source_type="task", source_id="task_1")
+        other_execution = execution_ledger.create_execution(user_id="user_2", source_type="task", source_id="task_2")
         step = execution_ledger.create_execution_step(
             execution_id=user_execution["execution_id"],
             step_order=1,
@@ -215,6 +215,10 @@ def test_list_helpers_scope_rows_to_execution_or_user(tmp_path):
         user_executions = execution_ledger.list_executions_for_user("user_1")
         assert [item["execution_id"] for item in user_executions] == [user_execution["execution_id"]]
         assert execution_ledger.get_execution(user_execution["execution_id"])["user_id"] == "user_1"
+        assert execution_ledger.get_execution_by_source(user_execution["source_type"], user_execution["source_id"])["execution_id"] == user_execution["execution_id"]
+        with session.get_connection() as conn:
+            assert execution_ledger.get_execution_by_source("task", "task_1", db=conn)["execution_id"] == user_execution["execution_id"]
+        assert execution_ledger.get_execution_by_source("task", "missing") is None
         assert execution_ledger.get_execution("missing") is None
         assert [item["step_id"] for item in execution_ledger.list_execution_steps(user_execution["execution_id"])] == [step["step_id"]]
         assert [item["event_type"] for item in execution_ledger.list_execution_events(user_execution["execution_id"])] == ["step_started"]

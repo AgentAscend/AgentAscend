@@ -101,9 +101,27 @@ def create_execution(
     return record
 
 
-def get_execution(execution_id: str) -> dict[str, Any] | None:
-    with get_connection() as conn:
-        row = conn.execute("SELECT * FROM executions WHERE execution_id = ?", (execution_id,)).fetchone()
+def get_execution(execution_id: str, db: Any | None = None) -> dict[str, Any] | None:
+    if db is not None:
+        row = db.execute("SELECT * FROM executions WHERE execution_id = ?", (execution_id,)).fetchone()
+    else:
+        with get_connection() as conn:
+            row = conn.execute("SELECT * FROM executions WHERE execution_id = ?", (execution_id,)).fetchone()
+    return _row_to_record(row) if row is not None else None
+
+
+def get_execution_by_source(source_type: str, source_id: str, db: Any | None = None) -> dict[str, Any] | None:
+    if db is not None:
+        row = db.execute(
+            "SELECT * FROM executions WHERE source_type = ? AND source_id = ? ORDER BY id DESC LIMIT 1",
+            (source_type, source_id),
+        ).fetchone()
+    else:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM executions WHERE source_type = ? AND source_id = ? ORDER BY id DESC LIMIT 1",
+                (source_type, source_id),
+            ).fetchone()
     return _row_to_record(row) if row is not None else None
 
 
@@ -329,16 +347,16 @@ def list_execution_approvals(execution_id: str) -> list[dict[str, Any]]:
     return [_row_to_record(row) for row in rows]
 
 
-def mark_execution_running(execution_id: str) -> dict[str, Any]:
-    return _update_execution_status(execution_id, "running", finished_at=None)
+def mark_execution_running(execution_id: str, db: Any | None = None) -> dict[str, Any]:
+    return _update_execution_status(execution_id, "running", finished_at=None, db=db)
 
 
-def mark_execution_completed(execution_id: str) -> dict[str, Any]:
-    return _update_execution_status(execution_id, "completed", finished_at=utc_now_iso())
+def mark_execution_completed(execution_id: str, db: Any | None = None) -> dict[str, Any]:
+    return _update_execution_status(execution_id, "completed", finished_at=utc_now_iso(), db=db)
 
 
-def mark_execution_failed(execution_id: str) -> dict[str, Any]:
-    return _update_execution_status(execution_id, "failed", finished_at=utc_now_iso())
+def mark_execution_failed(execution_id: str, db: Any | None = None) -> dict[str, Any]:
+    return _update_execution_status(execution_id, "failed", finished_at=utc_now_iso(), db=db)
 
 
 def mark_execution_step_running(step_id: str) -> dict[str, Any]:
@@ -360,16 +378,21 @@ def mark_execution_step_failed(step_id: str) -> dict[str, Any]:
     return _update_step_status(step_id, "failed")
 
 
-def _update_execution_status(execution_id: str, status: str, finished_at: str | None) -> dict[str, Any]:
-    if finished_at is None:
-        with get_connection() as conn:
+def _update_execution_status(execution_id: str, status: str, finished_at: str | None, db: Any | None = None) -> dict[str, Any]:
+    def update(conn: Any) -> None:
+        if finished_at is None:
             conn.execute("UPDATE executions SET status = ?, finished_at = NULL WHERE execution_id = ?", (status, execution_id))
-            conn.commit()
+        else:
+            conn.execute("UPDATE executions SET status = ?, finished_at = ? WHERE execution_id = ?", (status, finished_at, execution_id))
+
+    if db is not None:
+        update(db)
+        record = get_execution(execution_id, db=db)
     else:
         with get_connection() as conn:
-            conn.execute("UPDATE executions SET status = ?, finished_at = ? WHERE execution_id = ?", (status, finished_at, execution_id))
+            update(conn)
             conn.commit()
-    record = get_execution(execution_id)
+        record = get_execution(execution_id)
     if record is None:
         raise ValueError(f"Execution not found: {execution_id}")
     return record

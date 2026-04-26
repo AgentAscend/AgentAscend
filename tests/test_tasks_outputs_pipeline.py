@@ -117,6 +117,9 @@ def test_create_task_does_not_write_execution_ledger_when_disabled(client: TestC
 
 def test_create_task_writes_execution_ledger_when_enabled(client: TestClient, monkeypatch):
     monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+    import backend.app.routes.platform as platform
+
+    monkeypatch.setattr(platform, "_trigger_task_queue_worker", lambda: None)
     user_id, token = _signup(client, "tasks-ledger-enabled@example.com")
 
     response = client.post(
@@ -189,6 +192,153 @@ def test_create_task_rolls_back_task_and_ledger_when_enabled_event_write_fails(c
     assert task_count == 0
     assert executions_count == 0
     assert events_count == 0
+
+
+def _task_worker_job_id():
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        job = conn.execute("SELECT id FROM scheduled_jobs WHERE job_type='task_queue_worker'").fetchone()
+    assert job is not None
+    return job["id"]
+
+
+def _execution_for_task(task_id: str):
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        return conn.execute("SELECT * FROM executions WHERE source_type='task' AND source_id=?", (task_id,)).fetchone()
+
+
+def _events_for_execution(execution_id: str):
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM execution_events WHERE execution_id=? ORDER BY id ASC",
+            (execution_id,),
+        ).fetchall()
+
+
+def test_scheduler_worker_does_not_write_lifecycle_events_when_execution_ledger_disabled(client: TestClient, monkeypatch):
+    monkeypatch.delenv("EXECUTION_LEDGER_ENABLED", raising=False)
+    _user_id, token = _signup(client, "tasks-ledger-worker-disabled@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Disabled lifecycle task", "type": "analysis", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+
+    from backend.app.services.job_runner import run_job_once
+
+    run = run_job_once(_task_worker_job_id())
+    assert run["status"] == "success"
+
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        events_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM execution_events WHERE event_type IN ('execution_started', 'execution_completed', 'execution_failed')"
+        ).fetchone()["count"]
+
+    assert events_count == 0
+
+
+def test_scheduler_worker_writes_started_and_completed_lifecycle_events_when_enabled(client: TestClient, monkeypatch):
+    monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+    _user_id, token = _signup(client, "tasks-ledger-worker-complete@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Completed lifecycle task", "type": "analysis", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    from backend.app.services.job_runner import run_job_once
+
+    run = run_job_once(_task_worker_job_id())
+    assert run["status"] == "success"
+
+    execution = _execution_for_task(task_id)
+    assert execution is not None
+    assert execution["status"] == "completed"
+    assert execution["finished_at"]
+    events = _events_for_execution(execution["execution_id"])
+    event_types = [event["event_type"] for event in events]
+    assert "execution_started" in event_types
+    assert "execution_completed" in event_types
+    started_payload = json.loads(next(event["payload_json"] for event in events if event["event_type"] == "execution_started"))
+    assert started_payload["task_id"] == task_id
+    assert started_payload["previous_status"] == "queued"
+    assert started_payload["new_status"] == "running"
+    assert started_payload["timestamp"]
+    completed_payload = json.loads(next(event["payload_json"] for event in events if event["event_type"] == "execution_completed"))
+    assert completed_payload["task_id"] == task_id
+    assert completed_payload["status"] == "completed"
+    assert completed_payload["timestamp"]
+
+
+def test_scheduler_worker_writes_failed_lifecycle_event_with_safe_error_when_enabled(client: TestClient, monkeypatch):
+    monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+    _user_id, token = _signup(client, "tasks-ledger-worker-fail@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Failed lifecycle task", "type": "fail", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    from backend.app.services.job_runner import run_job_once
+
+    run = run_job_once(_task_worker_job_id())
+    assert run["status"] == "success"
+
+    execution = _execution_for_task(task_id)
+    assert execution is not None
+    assert execution["status"] == "failed"
+    assert execution["finished_at"]
+    events = _events_for_execution(execution["execution_id"])
+    event_types = [event["event_type"] for event in events]
+    assert "execution_started" in event_types
+    assert "execution_failed" in event_types
+    failed_payload = json.loads(next(event["payload_json"] for event in events if event["event_type"] == "execution_failed"))
+    assert failed_payload["task_id"] == task_id
+    assert failed_payload["status"] == "failed"
+    assert "Simulated task failure" in failed_payload["error"]
+    assert "token" not in json.dumps(failed_payload).lower()
+    assert "password" not in json.dumps(failed_payload).lower()
+    assert failed_payload["timestamp"]
+
+
+def test_scheduler_worker_skips_lifecycle_events_when_execution_row_is_missing(client: TestClient, monkeypatch):
+    monkeypatch.delenv("EXECUTION_LEDGER_ENABLED", raising=False)
+    _user_id, token = _signup(client, "tasks-ledger-worker-missing@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Missing execution lifecycle task", "type": "analysis", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+    assert _execution_for_task(task_id) is None
+    monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+
+    from backend.app.services.job_runner import run_job_once
+
+    run = run_job_once(_task_worker_job_id())
+    assert run["status"] == "success"
+
+    assert _execution_for_task(task_id) is None
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        lifecycle_events_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM execution_events WHERE event_type IN ('execution_started', 'execution_completed', 'execution_failed')"
+        ).fetchone()["count"]
+    assert lifecycle_events_count == 0
 
 
 def test_scheduler_worker_completes_queued_task_and_creates_output(client: TestClient):

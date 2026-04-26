@@ -12,6 +12,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 from backend.app.db.session import get_connection, utc_now_iso
+from backend.app.services import execution_ledger
 from backend.app.services.runtime_config import load_runtime_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -243,6 +244,31 @@ def _roadmap_review(_job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _safe_error_message(exc: Exception) -> str:
+    return str(exc)[:500]
+
+
+def _append_task_lifecycle_event(conn: Any, task_id: str, event_type: str, payload: dict[str, Any], new_execution_status: str | None = None) -> None:
+    if not execution_ledger.is_execution_ledger_enabled():
+        return
+    execution = execution_ledger.get_execution_by_source("task", task_id, db=conn)
+    if execution is None:
+        return
+    execution_id = execution["execution_id"]
+    if new_execution_status == "running":
+        execution_ledger.mark_execution_running(execution_id, db=conn)
+    elif new_execution_status == "completed":
+        execution_ledger.mark_execution_completed(execution_id, db=conn)
+    elif new_execution_status == "failed":
+        execution_ledger.mark_execution_failed(execution_id, db=conn)
+    execution_ledger.append_execution_event(
+        execution_id=execution_id,
+        event_type=event_type,
+        payload=payload,
+        db=conn,
+    )
+
+
 def _execute_user_task(task: dict[str, Any]) -> str:
     task_type = str(task.get("type") or "general").strip().lower()
     title = str(task.get("title") or "Untitled task").strip()
@@ -289,6 +315,18 @@ def _task_queue_worker(_job: dict[str, Any]) -> dict[str, Any]:
                 "INSERT INTO task_logs(task_id, level, message, created_at) VALUES (?, 'info', 'Task picked up by scheduler', datetime('now'))",
                 (task_id,),
             )
+            _append_task_lifecycle_event(
+                conn,
+                task_id,
+                "execution_started",
+                {
+                    "task_id": task_id,
+                    "previous_status": task.get("status"),
+                    "new_status": "running",
+                    "timestamp": utc_now_iso(),
+                },
+                new_execution_status="running",
+            )
             conn.commit()
         try:
             content = _execute_user_task(task)
@@ -311,18 +349,33 @@ def _task_queue_worker(_job: dict[str, Any]) -> dict[str, Any]:
                     "INSERT INTO task_logs(task_id, level, message, created_at) VALUES (?, 'info', ?, datetime('now'))",
                     (task_id, f"Task completed; output created: {output_id}"),
                 )
+                _append_task_lifecycle_event(
+                    conn,
+                    task_id,
+                    "execution_completed",
+                    {"task_id": task_id, "status": "completed", "timestamp": utc_now_iso()},
+                    new_execution_status="completed",
+                )
                 conn.commit()
             completed += 1
             output_ids.append(output_id)
         except Exception as exc:  # noqa: BLE001 - per-task failures should not crash the queue worker
+            safe_error = _safe_error_message(exc)
             with get_connection() as conn:
                 conn.execute(
                     "UPDATE tasks SET status='failed', error_message=?, updated_at=datetime('now') WHERE task_id=?",
-                    (str(exc), task_id),
+                    (safe_error, task_id),
                 )
                 conn.execute(
                     "INSERT INTO task_logs(task_id, level, message, created_at) VALUES (?, 'error', ?, datetime('now'))",
-                    (task_id, f"Task failed: {exc}"),
+                    (task_id, f"Task failed: {safe_error}"),
+                )
+                _append_task_lifecycle_event(
+                    conn,
+                    task_id,
+                    "execution_failed",
+                    {"task_id": task_id, "status": "failed", "error": safe_error, "timestamp": utc_now_iso()},
+                    new_execution_status="failed",
                 )
                 conn.commit()
             failed += 1
