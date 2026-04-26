@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     db_path = tmp_path / "agentascend-tasks-pipeline.db"
 
     import backend.app.db.session as session

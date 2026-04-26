@@ -6,11 +6,9 @@ from pathlib import Path
 
 
 def _default_db_path() -> Path:
-    configured = os.getenv("AGENTASCEND_DB_PATH") or os.getenv("DATABASE_PATH") or os.getenv("SQLITE_PATH")
+    configured = os.getenv("DATABASE_PATH") or os.getenv("SQLITE_PATH")
     if configured:
         return Path(configured)
-    if os.getenv("RAILWAY_SERVICE_ID") and Path("/data").exists():
-        return Path("/data/agentascend.db")
     return Path("backend/app/db/agentascend.db")
 
 
@@ -23,6 +21,97 @@ def utc_now_iso() -> str:
 
 def _next_interval_run(seconds: int) -> str:
     return (datetime.now(UTC).replace(microsecond=0) + timedelta(seconds=seconds)).isoformat()
+
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+def _using_postgres() -> bool:
+    url = os.getenv("DATABASE_URL", "").strip()
+    return url.startswith(("postgres://", "postgresql://"))
+
+
+class DbRow(dict):
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return list(self.values())[key]
+        return super().__getitem__(key)
+
+
+def _translate_sql(sql: str) -> str:
+    translated = sql.replace("datetime('now')", "CURRENT_TIMESTAMP")
+    had_insert_or_ignore = "INSERT OR IGNORE INTO" in translated
+    translated = translated.replace("INSERT OR IGNORE INTO", "INSERT INTO")
+    translated = translated.replace("?", "%s")
+    if had_insert_or_ignore and "ON CONFLICT" not in translated.upper():
+        translated = f"{translated} ON CONFLICT DO NOTHING"
+    return translated
+
+
+class PostgresCursorAdapter:
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self.rowcount = cursor.rowcount
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        if row is None:
+            return None
+        return DbRow(row)
+
+    def fetchall(self):
+        return [DbRow(row) for row in self._cursor.fetchall()]
+
+    def __iter__(self):
+        for row in self._cursor:
+            yield DbRow(row)
+
+
+class PostgresConnectionAdapter:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql: str, params=()):
+        if params is None:
+            params = ()
+        translated = _translate_sql(sql)
+        cur = self._conn.cursor()
+        try:
+            cur.execute(translated, params)
+        except Exception:
+            cur.close()
+            raise
+        return PostgresCursorAdapter(cur)
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type is None:
+            self.commit()
+        else:
+            self.rollback()
+        self.close()
+        return False
+
+
+def _connect_postgres():
+    try:
+        import psycopg2
+        import psycopg2.extras
+    except ImportError as exc:
+        raise RuntimeError("DATABASE_URL is configured for Postgres, but psycopg2-binary is not installed") from exc
+    conn = psycopg2.connect(os.environ["DATABASE_URL"], cursor_factory=psycopg2.extras.RealDictCursor)
+    return PostgresConnectionAdapter(conn)
 
 
 def _init_scheduler_tables(conn: sqlite3.Connection) -> None:
@@ -236,13 +325,15 @@ def _seed_default_scheduled_jobs(conn: sqlite3.Connection) -> None:
 
 
 def get_connection():
+    if _using_postgres():
+        return _connect_postgres()
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 
-def init_db():
+def _init_sqlite_db():
     with get_connection() as conn:
         conn.execute(
             """
@@ -817,3 +908,427 @@ def init_db():
         conn.execute("DELETE FROM ops_alerts WHERE alert_id IN ('alert_001', 'alert_002')")
         conn.execute("DELETE FROM observability_metrics WHERE metric_name IN ('api_requests_per_min', 'api_error_rate') AND labels_json = '{\"service\":\"api\"}'")
         conn.commit()
+
+
+_POSTGRES_TABLE_DDL = [
+    """CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT UNIQUE NOT NULL,
+        email TEXT,
+        password_hash TEXT,
+        display_name TEXT,
+        bio TEXT,
+        avatar_url TEXT,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS auth_sessions (
+        id SERIAL PRIMARY KEY,
+        session_token_hash TEXT UNIQUE NOT NULL,
+        user_id TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        revoked_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        last_seen_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS payments (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        amount DOUBLE PRECISION NOT NULL,
+        token TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        tx_signature TEXT UNIQUE
+    )""",
+    """CREATE TABLE IF NOT EXISTS access_grants (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        feature_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS idempotency_records (
+        id SERIAL PRIMARY KEY,
+        operation_scope TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        response_json TEXT,
+        status_code INTEGER,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(operation_scope, idempotency_key)
+    )""",
+    """CREATE TABLE IF NOT EXISTS scheduled_jobs (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        job_type TEXT NOT NULL UNIQUE,
+        schedule_type TEXT NOT NULL,
+        cron_expression TEXT,
+        interval_seconds INTEGER,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        priority INTEGER NOT NULL DEFAULT 50,
+        model_tier TEXT NOT NULL DEFAULT 'cheap',
+        last_run_at TEXT,
+        next_run_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        created_by TEXT NOT NULL DEFAULT 'system',
+        metadata_json TEXT NOT NULL DEFAULT '{}'
+    )""",
+    """CREATE TABLE IF NOT EXISTS job_runs (
+        id TEXT PRIMARY KEY,
+        scheduled_job_id TEXT NOT NULL REFERENCES scheduled_jobs(id),
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        status TEXT NOT NULL,
+        output_summary TEXT,
+        error_message TEXT,
+        model_used TEXT,
+        tokens_used INTEGER NOT NULL DEFAULT 0,
+        metadata_json TEXT NOT NULL DEFAULT '{}'
+    )""",
+    """CREATE TABLE IF NOT EXISTS agent_findings (
+        id TEXT PRIMARY KEY,
+        source_job_id TEXT REFERENCES scheduled_jobs(id),
+        finding_type TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        recommendation TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        metadata_json TEXT NOT NULL DEFAULT '{}'
+    )""",
+    """CREATE TABLE IF NOT EXISTS marketplace_listings (
+        id SERIAL PRIMARY KEY,
+        listing_id TEXT UNIQUE NOT NULL,
+        creator_user_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category TEXT NOT NULL,
+        pricing_model TEXT NOT NULL,
+        price_amount DOUBLE PRECISION NOT NULL,
+        price_token TEXT NOT NULL,
+        status TEXT NOT NULL,
+        tags_json TEXT,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL,
+        published_at TIMESTAMPTZ
+    )""",
+    """CREATE TABLE IF NOT EXISTS creator_earnings_events (
+        id SERIAL PRIMARY KEY,
+        creator_user_id TEXT NOT NULL,
+        listing_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        gross_amount DOUBLE PRECISION NOT NULL,
+        fee_amount DOUBLE PRECISION NOT NULL,
+        creator_amount DOUBLE PRECISION NOT NULL,
+        token TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS creator_payout_requests (
+        id SERIAL PRIMARY KEY,
+        request_id TEXT UNIQUE NOT NULL,
+        creator_user_id TEXT NOT NULL,
+        requested_amount DOUBLE PRECISION NOT NULL,
+        token TEXT NOT NULL,
+        destination_wallet TEXT NOT NULL,
+        note TEXT,
+        status TEXT NOT NULL,
+        rejection_reason TEXT,
+        tx_signature TEXT,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL,
+        approved_at TIMESTAMPTZ,
+        rejected_at TIMESTAMPTZ,
+        paid_at TIMESTAMPTZ
+    )""",
+    """CREATE TABLE IF NOT EXISTS agents (
+        id SERIAL PRIMARY KEY,
+        agent_id TEXT UNIQUE NOT NULL,
+        owner_user_id TEXT,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL,
+        tasks_completed INTEGER NOT NULL DEFAULT 0,
+        success_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS deployments (
+        id SERIAL PRIMARY KEY,
+        deployment_id TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        status TEXT NOT NULL,
+        region TEXT NOT NULL,
+        agents_count INTEGER NOT NULL DEFAULT 0,
+        cpu_percent INTEGER NOT NULL DEFAULT 0,
+        memory_percent INTEGER NOT NULL DEFAULT 0,
+        requests_per_day INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS workflows (
+        id SERIAL PRIMARY KEY,
+        workflow_id TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        runs_total INTEGER NOT NULL DEFAULT 0,
+        success_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS workflow_runs (
+        id SERIAL PRIMARY KEY,
+        run_id TEXT UNIQUE NOT NULL,
+        workflow_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        started_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS tasks (
+        id SERIAL PRIMARY KEY,
+        task_id TEXT UNIQUE NOT NULL,
+        user_id TEXT,
+        agent_id TEXT,
+        type TEXT NOT NULL DEFAULT 'general',
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        priority TEXT NOT NULL DEFAULT 'medium',
+        assigned_to TEXT,
+        error_message TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS outputs (
+        id SERIAL PRIMARY KEY,
+        output_id TEXT UNIQUE NOT NULL,
+        task_id TEXT,
+        user_id TEXT,
+        title TEXT NOT NULL,
+        output_type TEXT NOT NULL,
+        content TEXT,
+        text TEXT,
+        file_url TEXT,
+        size_bytes INTEGER NOT NULL DEFAULT 0,
+        download_url TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS community_posts (
+        id SERIAL PRIMARY KEY,
+        post_id TEXT UNIQUE NOT NULL,
+        author_user_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        likes INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS notifications (
+        id SERIAL PRIMARY KEY,
+        notification_id TEXT UNIQUE NOT NULL,
+        user_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        is_read INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS user_preferences (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT UNIQUE NOT NULL,
+        notifications_email INTEGER NOT NULL DEFAULT 1,
+        notifications_push INTEGER NOT NULL DEFAULT 1,
+        notifications_marketing INTEGER NOT NULL DEFAULT 0,
+        theme TEXT NOT NULL DEFAULT 'dark',
+        updated_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS marketplace_entitlements (
+        id SERIAL PRIMARY KEY,
+        listing_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        installed_at TIMESTAMPTZ NOT NULL,
+        UNIQUE(listing_id, user_id)
+    )""",
+    """CREATE TABLE IF NOT EXISTS activity_log (id SERIAL PRIMARY KEY, source TEXT NOT NULL, action TEXT NOT NULL, occurred_at TIMESTAMPTZ NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS deployment_metrics (
+        id SERIAL PRIMARY KEY,
+        deployment_id TEXT NOT NULL,
+        cpu_percent DOUBLE PRECISION NOT NULL,
+        memory_percent DOUBLE PRECISION NOT NULL,
+        p95_latency_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
+        error_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+        recorded_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS workflow_nodes (
+        id SERIAL PRIMARY KEY,
+        workflow_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        node_type TEXT NOT NULL,
+        config_json TEXT NOT NULL,
+        position_json TEXT NOT NULL,
+        UNIQUE(workflow_id, node_id)
+    )""",
+    """CREATE TABLE IF NOT EXISTS task_logs (id SERIAL PRIMARY KEY, task_id TEXT NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS user_profile_extras (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT UNIQUE NOT NULL,
+        timezone TEXT,
+        language TEXT,
+        website_url TEXT,
+        location TEXT,
+        updated_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS api_keys (
+        id SERIAL PRIMARY KEY,
+        key_id TEXT UNIQUE NOT NULL,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        key_hash TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        last_used_at TIMESTAMPTZ
+    )""",
+    """CREATE TABLE IF NOT EXISTS user_integrations (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        status TEXT NOT NULL,
+        config_json TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL,
+        UNIQUE(user_id, provider)
+    )""",
+    """CREATE TABLE IF NOT EXISTS staking_positions (
+        id SERIAL PRIMARY KEY,
+        position_id TEXT UNIQUE NOT NULL,
+        user_id TEXT NOT NULL,
+        token TEXT NOT NULL,
+        amount DOUBLE PRECISION NOT NULL,
+        apy DOUBLE PRECISION NOT NULL,
+        status TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS rewards_ledger (
+        id SERIAL PRIMARY KEY,
+        entry_id TEXT UNIQUE NOT NULL,
+        user_id TEXT NOT NULL,
+        token TEXT NOT NULL,
+        amount DOUBLE PRECISION NOT NULL,
+        source TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS marketplace_install_events (
+        id SERIAL PRIMARY KEY,
+        event_id TEXT UNIQUE NOT NULL,
+        listing_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS audit_events (
+        id SERIAL PRIMARY KEY,
+        event_id TEXT UNIQUE NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS ops_alerts (
+        id SERIAL PRIMARY KEY,
+        alert_id TEXT UNIQUE NOT NULL,
+        severity TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS observability_metrics (
+        id SERIAL PRIMARY KEY,
+        metric_name TEXT NOT NULL,
+        metric_value DOUBLE PRECISION NOT NULL,
+        labels_json TEXT NOT NULL,
+        recorded_at TIMESTAMPTZ NOT NULL
+    )""",
+]
+
+_POSTGRES_INDEX_DDL = [
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_tx_signature ON payments(tx_signature)",
+    "CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next_run ON scheduled_jobs(enabled, next_run_at)",
+    "CREATE INDEX IF NOT EXISTS idx_job_runs_job_started ON job_runs(scheduled_job_id, started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_findings_source ON agent_findings(source_job_id)",
+    "CREATE INDEX IF NOT EXISTS idx_agents_owner_user_id ON agents(owner_user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_outputs_task_user ON outputs(task_id, user_id)",
+]
+
+_POSTGRES_COLUMN_MIGRATIONS = {
+    "users": [
+        ("email", "TEXT"), ("password_hash", "TEXT"), ("display_name", "TEXT"),
+        ("bio", "TEXT"), ("avatar_url", "TEXT"), ("updated_at", "TIMESTAMPTZ"),
+    ],
+    "payments": [("tx_signature", "TEXT")],
+    "agents": [("owner_user_id", "TEXT")],
+    "tasks": [
+        ("user_id", "TEXT"), ("agent_id", "TEXT"), ("type", "TEXT NOT NULL DEFAULT 'general'"),
+        ("error_message", "TEXT"), ("created_at", "TIMESTAMPTZ"),
+    ],
+    "outputs": [("task_id", "TEXT"), ("user_id", "TEXT"), ("content", "TEXT"), ("text", "TEXT"), ("file_url", "TEXT")],
+    "community_posts": [("updated_at", "TIMESTAMPTZ")],
+}
+
+
+def _postgres_column_exists(conn, table: str, column: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = ? AND column_name = ?
+        """,
+        (table, column),
+    ).fetchone()
+    return row is not None
+
+
+def _init_postgres_db():
+    with get_connection() as conn:
+        for ddl in _POSTGRES_TABLE_DDL:
+            conn.execute(ddl)
+        for table, columns in _POSTGRES_COLUMN_MIGRATIONS.items():
+            for column, column_type in columns:
+                if not _postgres_column_exists(conn, table, column):
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
+        conn.execute("UPDATE users SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL")
+        conn.execute("UPDATE tasks SET created_at = COALESCE(created_at, updated_at, CURRENT_TIMESTAMP) WHERE created_at IS NULL")
+        conn.execute("UPDATE community_posts SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL")
+        for ddl in _POSTGRES_INDEX_DDL:
+            conn.execute(ddl)
+        _seed_default_scheduled_jobs(conn)
+        _remove_legacy_demo_rows(conn)
+        conn.commit()
+
+
+def _remove_legacy_demo_rows(conn) -> None:
+    conn.execute("DELETE FROM agents WHERE agent_id IN ('agt_research_alpha', 'agt_builder_bot', 'agt_social_sentinel', 'agt_strat_mind')")
+    conn.execute("DELETE FROM deployments WHERE deployment_id IN ('dep_prod', 'dep_stage', 'dep_dev')")
+    conn.execute("DELETE FROM workflows WHERE workflow_id IN ('wf_market_scan', 'wf_deploy_check', 'wf_content_loop')")
+    conn.execute("DELETE FROM workflow_runs WHERE run_id IN ('run_001', 'run_002', 'run_003')")
+    conn.execute("DELETE FROM tasks WHERE task_id IN ('tsk_001', 'tsk_002', 'tsk_003')")
+    conn.execute("DELETE FROM outputs WHERE output_id IN ('out_001', 'out_002')")
+    conn.execute("DELETE FROM community_posts WHERE post_id IN ('post_001', 'post_002')")
+    conn.execute("DELETE FROM activity_log WHERE source='system' AND action='Initial platform dataset seeded'")
+    conn.execute("DELETE FROM activity_log WHERE source='deployment' AND action='Production cluster health check passed'")
+    conn.execute("DELETE FROM deployment_metrics WHERE deployment_id IN ('dep_prod', 'dep_stage')")
+    conn.execute("DELETE FROM ops_alerts WHERE alert_id IN ('alert_001', 'alert_002')")
+    conn.execute("DELETE FROM observability_metrics WHERE metric_name IN ('api_requests_per_min', 'api_error_rate') AND labels_json = '{\"service\":\"api\"}'")
+
+
+def init_db():
+    if _using_postgres():
+        _init_postgres_db()
+    else:
+        _init_sqlite_db()
