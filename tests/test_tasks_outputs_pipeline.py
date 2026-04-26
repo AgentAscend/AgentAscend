@@ -1,4 +1,5 @@
 import importlib
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +15,7 @@ if str(ROOT) not in sys.path:
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("EXECUTION_LEDGER_ENABLED", raising=False)
     db_path = tmp_path / "agentascend-tasks-pipeline.db"
 
     import backend.app.db.session as session
@@ -70,6 +72,7 @@ def test_create_task_stores_real_job_fields(client: TestClient):
     )
 
     assert response.status_code == 200, response.text
+    assert set(response.json().keys()) == {"status", "task_id"}
     task_id = response.json()["task_id"]
 
     detail = client.get(f"/tasks/{task_id}")
@@ -87,6 +90,75 @@ def test_create_task_stores_real_job_fields(client: TestClient):
     assert feed_response.status_code == 200, feed_response.text
     feed = feed_response.json()["tasks"]
     assert any(item["task_id"] == task_id and item["user_id"] == user_id for item in feed)
+
+
+def test_create_task_does_not_write_execution_ledger_when_disabled(client: TestClient, monkeypatch):
+    monkeypatch.delenv("EXECUTION_LEDGER_ENABLED", raising=False)
+    _user_id, token = _signup(client, "tasks-ledger-disabled@example.com")
+
+    response = client.post(
+        "/tasks",
+        json={"title": "Ledger disabled task", "type": "analysis", "agent_id": "agt_disabled"},
+        headers=_auth_header(token),
+    )
+
+    assert response.status_code == 200, response.text
+    assert set(response.json().keys()) == {"status", "task_id"}
+
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        executions_count = conn.execute("SELECT COUNT(*) AS count FROM executions").fetchone()["count"]
+        events_count = conn.execute("SELECT COUNT(*) AS count FROM execution_events").fetchone()["count"]
+
+    assert executions_count == 0
+    assert events_count == 0
+
+
+def test_create_task_writes_execution_ledger_when_enabled(client: TestClient, monkeypatch):
+    monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+    user_id, token = _signup(client, "tasks-ledger-enabled@example.com")
+
+    response = client.post(
+        "/tasks",
+        json={"title": "Ledger enabled task", "type": "analysis", "agent_id": "agt_enabled"},
+        headers=_auth_header(token),
+    )
+
+    assert response.status_code == 200, response.text
+    assert set(response.json().keys()) == {"status", "task_id"}
+    task_id = response.json()["task_id"]
+
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        executions = conn.execute("SELECT * FROM executions WHERE source_type='task' AND source_id=?", (task_id,)).fetchall()
+
+    assert len(executions) == 1
+    execution = executions[0]
+    assert execution["user_id"] == user_id
+    assert execution["agent_id"] == "agt_enabled"
+    assert execution["status"] == "queued"
+    execution_metadata = json.loads(execution["metadata_json"])
+    assert execution_metadata == {
+        "task_id": task_id,
+        "task_title": "Ledger enabled task",
+        "task_type": "analysis",
+    }
+
+    with session.get_connection() as conn:
+        events = conn.execute(
+            "SELECT * FROM execution_events WHERE execution_id=? AND event_type='task_created'",
+            (execution["execution_id"],),
+        ).fetchall()
+
+    assert len(events) == 1
+    event = events[0]
+    assert event["execution_id"] == execution["execution_id"]
+    payload = json.loads(event["payload_json"])
+    assert payload["task_id"] == task_id
+    assert payload["status"] == "queued"
+    assert payload["created_at"]
 
 
 def test_scheduler_worker_completes_queued_task_and_creates_output(client: TestClient):

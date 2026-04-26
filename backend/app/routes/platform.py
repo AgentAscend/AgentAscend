@@ -53,6 +53,7 @@ from backend.app.schemas.platform import (
     WorkflowRecord,
     WorkflowRunRecord,
 )
+from backend.app.services import execution_ledger
 from backend.app.services.auth_service import require_user_access, resolve_session, update_profile
 from backend.app.services.error_response import fail
 from backend.app.services.job_runner import run_job_once
@@ -919,6 +920,33 @@ class TaskCreateInput(BaseModel):
     assigned_to: str | None = None
 
 
+def _write_task_creation_ledger(task_id: str, actor: str, payload: TaskCreateInput, created_at: str | None) -> None:
+    if not execution_ledger.is_execution_ledger_enabled():
+        return
+
+    execution = execution_ledger.create_execution(
+        user_id=actor,
+        source_type="task",
+        source_id=task_id,
+        agent_id=payload.agent_id or payload.assigned_to,
+        status="queued",
+        metadata={
+            "task_id": task_id,
+            "task_title": payload.title,
+            "task_type": payload.type,
+        },
+    )
+    execution_ledger.append_execution_event(
+        execution_id=execution["execution_id"],
+        event_type="task_created",
+        payload={
+            "task_id": task_id,
+            "status": "queued",
+            "created_at": created_at,
+        },
+    )
+
+
 @router.post("/tasks")
 def create_task(payload: TaskCreateInput, background_tasks: BackgroundTasks, authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)
@@ -935,7 +963,9 @@ def create_task(payload: TaskCreateInput, background_tasks: BackgroundTasks, aut
             "INSERT INTO task_logs(task_id, level, message, created_at) VALUES (?, 'info', ?, datetime('now'))",
             (task_id, f"Task created by {actor}"),
         )
+        task_row = conn.execute("SELECT created_at FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         conn.commit()
+    _write_task_creation_ledger(task_id, actor, payload, task_row["created_at"] if task_row else None)
     _audit(actor, "task.create", "task", task_id, {"priority": payload.priority})
     background_tasks.add_task(_trigger_task_queue_worker)
     return {"status": "ok", "task_id": task_id}
