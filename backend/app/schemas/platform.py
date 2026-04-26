@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -109,6 +109,95 @@ class WorkflowListResponse(BaseModel):
     status: Literal["ok"] = "ok"
     workflows: list[WorkflowRecord]
     recent_runs: list[WorkflowRunRecord]
+
+
+class ExecutionRecord(BaseModel):
+    execution_id: str
+    source_type: str | None = None
+    source_id: str | None = None
+    user_id: str | None = None
+    agent_id: str | None = None
+    status: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecutionEventRecord(BaseModel):
+    event_id: str
+    execution_id: str
+    step_id: str | None = None
+    event_type: str
+    level: str
+    message: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class ExecutionArtifactRecord(BaseModel):
+    artifact_id: str
+    execution_id: str
+    step_id: str | None = None
+    artifact_type: str
+    name: str
+    uri: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class ExecutionStepRecord(BaseModel):
+    step_id: str
+    execution_id: str
+    step_order: int
+    step_type: str
+    name: str
+    status: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecutionCostRecord(BaseModel):
+    cost_id: str
+    execution_id: str
+    step_id: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_amount: float = 0
+    cost_currency: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class ExecutionApprovalRecord(BaseModel):
+    approval_id: str
+    execution_id: str
+    step_id: str | None = None
+    approval_type: str
+    status: str
+    requested_by: str | None = None
+    approved_by: str | None = None
+    requested_at: str
+    decided_at: str | None = None
+    reason: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecutionListResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    executions: list[ExecutionRecord]
+
+
+class ExecutionDetailResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    execution: ExecutionRecord
+    steps: list[ExecutionStepRecord] = Field(default_factory=list)
+    events: list[ExecutionEventRecord] = Field(default_factory=list)
+    artifacts: list[ExecutionArtifactRecord] = Field(default_factory=list)
+    costs: list[ExecutionCostRecord] = Field(default_factory=list)
+    approvals: list[ExecutionApprovalRecord] = Field(default_factory=list)
 
 
 class TaskRecord(BaseModel):

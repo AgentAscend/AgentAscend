@@ -29,6 +29,9 @@ from backend.app.schemas.platform import (
     DeploymentRecord,
     EntitlementRecord,
     EntitlementsResponse,
+    ExecutionDetailResponse,
+    ExecutionListResponse,
+    ExecutionRecord,
     InstallListingRequest,
     InstallListingResponse,
     LeaderboardEntry,
@@ -327,6 +330,162 @@ def list_outputs(task_id: str | None = None, user_id: str | None = None, authori
         rows = conn.execute(query, tuple(params)).fetchall()
 
     return {"status": "ok", "outputs": [OutputRecord(**_row_dict(r)) for r in rows]}
+
+
+_SECRET_RESPONSE_KEY_PARTS = (
+    "api_key",
+    "apikey",
+    "authorization",
+    "bearer",
+    "content",
+    "credential",
+    "database_url",
+    "password",
+    "passwd",
+    "postgres_url",
+    "private_key",
+    "secret",
+    "token",
+)
+
+
+def _safe_json_dict(value) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    cleaned: dict = {}
+    for key, nested in value.items():
+        key_text = str(key).lower()
+        if any(part in key_text for part in _SECRET_RESPONSE_KEY_PARTS):
+            continue
+        if isinstance(nested, dict):
+            cleaned[key] = _safe_json_dict(nested)
+        elif isinstance(nested, list):
+            cleaned[key] = [_safe_json_dict(item) if isinstance(item, dict) else item for item in nested]
+        else:
+            cleaned[key] = nested
+    return cleaned
+
+
+def _execution_record_payload(execution: dict) -> ExecutionRecord:
+    return ExecutionRecord(
+        execution_id=execution["execution_id"],
+        source_type=execution.get("source_type"),
+        source_id=execution.get("source_id"),
+        user_id=execution.get("user_id"),
+        agent_id=execution.get("agent_id"),
+        status=execution["status"],
+        started_at=execution.get("started_at"),
+        finished_at=execution.get("finished_at"),
+        metadata=_safe_json_dict(execution.get("metadata")),
+    )
+
+
+def _execution_detail_payload(execution: dict) -> dict:
+    execution_id = execution["execution_id"]
+    events = [
+        {
+            "event_id": event["event_id"],
+            "execution_id": event["execution_id"],
+            "step_id": event.get("step_id"),
+            "event_type": event["event_type"],
+            "level": event["level"],
+            "message": event.get("message"),
+            "payload": _safe_json_dict(event.get("payload")),
+            "created_at": event["created_at"],
+        }
+        for event in execution_ledger.list_execution_events(execution_id)
+    ]
+    artifacts = [
+        {
+            "artifact_id": artifact["artifact_id"],
+            "execution_id": artifact["execution_id"],
+            "step_id": artifact.get("step_id"),
+            "artifact_type": artifact["artifact_type"],
+            "name": artifact["name"],
+            "uri": artifact.get("uri"),
+            "metadata": _safe_json_dict(artifact.get("metadata")),
+            "created_at": artifact["created_at"],
+        }
+        for artifact in execution_ledger.list_execution_artifacts(execution_id)
+    ]
+    steps = [
+        {
+            "step_id": step["step_id"],
+            "execution_id": step["execution_id"],
+            "step_order": step["step_order"],
+            "step_type": step["step_type"],
+            "name": step["name"],
+            "status": step["status"],
+            "started_at": step.get("started_at"),
+            "finished_at": step.get("finished_at"),
+            "metadata": _safe_json_dict(step.get("metadata")),
+        }
+        for step in execution_ledger.list_execution_steps(execution_id)
+    ]
+    costs = [
+        {
+            "cost_id": cost["cost_id"],
+            "execution_id": cost["execution_id"],
+            "step_id": cost.get("step_id"),
+            "provider": cost.get("provider"),
+            "model": cost.get("model"),
+            "input_tokens": cost["input_tokens"],
+            "output_tokens": cost["output_tokens"],
+            "cost_amount": cost["cost_amount"],
+            "cost_currency": cost["cost_currency"],
+            "metadata": _safe_json_dict(cost.get("metadata")),
+            "created_at": cost["created_at"],
+        }
+        for cost in execution_ledger.list_execution_costs(execution_id)
+    ]
+    approvals = [
+        {
+            "approval_id": approval["approval_id"],
+            "execution_id": approval["execution_id"],
+            "step_id": approval.get("step_id"),
+            "approval_type": approval["approval_type"],
+            "status": approval["status"],
+            "requested_by": approval.get("requested_by"),
+            "approved_by": approval.get("approved_by"),
+            "requested_at": approval["requested_at"],
+            "decided_at": approval.get("decided_at"),
+            "reason": approval.get("reason"),
+            "metadata": _safe_json_dict(approval.get("metadata")),
+        }
+        for approval in execution_ledger.list_execution_approvals(execution_id)
+    ]
+    return {
+        "status": "ok",
+        "execution": _execution_record_payload(execution),
+        "steps": steps,
+        "events": events,
+        "artifacts": artifacts,
+        "costs": costs,
+        "approvals": approvals,
+    }
+
+
+def _require_execution_owner(execution: dict, actor: dict) -> None:
+    if execution.get("user_id") != actor["user_id"] and actor.get("role") != "admin":
+        fail(403, "forbidden", "Authenticated user cannot access another user's execution")
+
+
+@router.get("/executions/me", response_model=ExecutionListResponse)
+def list_my_executions(authorization: str | None = Header(default=None)):
+    auth = resolve_session(authorization)
+    user_id = auth["user"]["user_id"]
+    executions = execution_ledger.list_executions_for_user(user_id)
+    return {"status": "ok", "executions": [_execution_record_payload(execution) for execution in executions]}
+
+
+@router.get("/executions/{execution_id}", response_model=ExecutionDetailResponse)
+def get_execution_detail(execution_id: str, authorization: str | None = Header(default=None)):
+    auth = resolve_session(authorization)
+    execution = execution_ledger.get_execution(execution_id)
+    if not execution:
+        fail(404, "not_found", "Execution not found")
+    _require_execution_owner(execution, auth["user"])
+    return _execution_detail_payload(execution)
 
 
 @router.get("/community", response_model=CommunityResponse)
@@ -971,6 +1130,22 @@ def create_task(payload: TaskCreateInput, background_tasks: BackgroundTasks, aut
     _audit(actor, "task.create", "task", task_id, {"priority": payload.priority})
     background_tasks.add_task(_trigger_task_queue_worker)
     return {"status": "ok", "task_id": task_id}
+
+
+@router.get("/tasks/{task_id}/execution", response_model=ExecutionDetailResponse)
+def get_task_execution(task_id: str, authorization: str | None = Header(default=None)):
+    auth = resolve_session(authorization)
+    actor = auth["user"]
+    with get_connection() as conn:
+        task = conn.execute("SELECT task_id, user_id FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        if not task:
+            fail(404, "not_found", "Task not found")
+        if task["user_id"] != actor["user_id"] and actor.get("role") != "admin":
+            fail(403, "forbidden", "Authenticated user cannot access another user's task execution")
+        execution = execution_ledger.get_execution_by_source("task", task_id, db=conn)
+    if not execution:
+        fail(404, "not_found", "Execution not found")
+    return _execution_detail_payload(execution)
 
 
 @router.get("/tasks/{task_id}")
