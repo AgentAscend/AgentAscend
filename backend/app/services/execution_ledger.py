@@ -1,0 +1,376 @@
+from __future__ import annotations
+
+import json
+import os
+import uuid
+from typing import Any
+
+from backend.app.db.session import get_connection, utc_now_iso
+
+_TRUTHY_VALUES = {"1", "true", "yes", "on"}
+_SENSITIVE_KEY_PARTS = (
+    "api_key",
+    "apikey",
+    "secret",
+    "password",
+    "passwd",
+    "token",
+    "credential",
+    "database_url",
+    "postgres_url",
+    "private_key",
+)
+
+
+def is_execution_ledger_enabled() -> bool:
+    return os.getenv("EXECUTION_LEDGER_ENABLED", "").strip().lower() in _TRUTHY_VALUES
+
+
+def _new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:16]}"
+
+
+def _assert_no_sensitive_keys(value: Any, path: str = "payload") -> None:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            key_text = str(key).lower()
+            if any(part in key_text for part in _SENSITIVE_KEY_PARTS):
+                raise ValueError(f"Execution ledger {path} contains sensitive key: {key}")
+            _assert_no_sensitive_keys(nested, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            _assert_no_sensitive_keys(nested, f"{path}[{index}]")
+
+
+def _json_dumps(value: dict[str, Any] | None) -> str:
+    payload = value or {}
+    _assert_no_sensitive_keys(payload)
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _json_loads(value: str | None) -> dict[str, Any]:
+    try:
+        loaded = json.loads(value or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _row_to_record(row: Any, json_fields: tuple[str, ...] = ("metadata_json",)) -> dict[str, Any]:
+    data = dict(row)
+    if "metadata_json" in json_fields and "metadata_json" in data:
+        data["metadata"] = _json_loads(data.get("metadata_json"))
+    if "payload_json" in json_fields and "payload_json" in data:
+        data["payload"] = _json_loads(data.get("payload_json"))
+    return data
+
+
+def create_execution(
+    user_id: str | None = None,
+    source_type: str | None = None,
+    source_id: str | None = None,
+    status: str = "pending",
+    metadata: dict[str, Any] | None = None,
+    execution_id: str | None = None,
+    agent_id: str | None = None,
+) -> dict[str, Any]:
+    execution_id = execution_id or _new_id("exec")
+    now = utc_now_iso()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO executions(execution_id, source_type, source_id, user_id, agent_id, status, started_at, metadata_json)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (execution_id, source_type, source_id, user_id, agent_id, status, now, _json_dumps(metadata)),
+        )
+        conn.commit()
+    record = get_execution(execution_id)
+    if record is None:
+        raise RuntimeError(f"Execution was not created: {execution_id}")
+    return record
+
+
+def get_execution(execution_id: str) -> dict[str, Any] | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM executions WHERE execution_id = ?", (execution_id,)).fetchone()
+    return _row_to_record(row) if row is not None else None
+
+
+def list_executions_for_user(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM executions WHERE user_id = ? ORDER BY started_at DESC, id DESC LIMIT ?",
+            (user_id, limit),
+        ).fetchall()
+    return [_row_to_record(row) for row in rows]
+
+
+def create_execution_step(
+    execution_id: str,
+    step_order: int,
+    step_type: str,
+    name: str,
+    status: str = "pending",
+    metadata: dict[str, Any] | None = None,
+    step_id: str | None = None,
+) -> dict[str, Any]:
+    step_id = step_id or _new_id("step")
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO execution_steps(step_id, execution_id, step_order, step_type, name, status, metadata_json)
+            VALUES(?, ?, ?, ?, ?, ?, ?)
+            """,
+            (step_id, execution_id, step_order, step_type, name, status, _json_dumps(metadata)),
+        )
+        conn.commit()
+    return _get_required_by_id("execution_steps", "step_id", step_id)
+
+
+def list_execution_steps(execution_id: str) -> list[dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM execution_steps WHERE execution_id = ? ORDER BY step_order ASC, id ASC",
+            (execution_id,),
+        ).fetchall()
+    return [_row_to_record(row) for row in rows]
+
+
+def append_execution_event(
+    execution_id: str,
+    event_type: str,
+    payload: dict[str, Any] | None = None,
+    level: str = "info",
+    message: str | None = None,
+    step_id: str | None = None,
+    event_id: str | None = None,
+) -> dict[str, Any]:
+    event_id = event_id or _new_id("evt")
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO execution_events(event_id, execution_id, step_id, event_type, level, message, payload_json, created_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (event_id, execution_id, step_id, event_type, level, message, _json_dumps(payload), utc_now_iso()),
+        )
+        conn.commit()
+    return _get_required_by_id("execution_events", "event_id", event_id, json_fields=("payload_json",))
+
+
+def list_execution_events(execution_id: str) -> list[dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM execution_events WHERE execution_id = ? ORDER BY created_at ASC, id ASC",
+            (execution_id,),
+        ).fetchall()
+    return [_row_to_record(row, json_fields=("payload_json",)) for row in rows]
+
+
+def attach_execution_artifact(
+    execution_id: str,
+    artifact_type: str,
+    name: str,
+    step_id: str | None = None,
+    uri: str | None = None,
+    content_text: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    source_type: str | None = None,
+    source_id: str | None = None,
+    payload: dict[str, Any] | None = None,
+    artifact_id: str | None = None,
+) -> dict[str, Any]:
+    artifact_id = artifact_id or _new_id("art")
+    artifact_metadata = dict(metadata or {})
+    if source_type is not None:
+        artifact_metadata["source_type"] = source_type
+    if source_id is not None:
+        artifact_metadata["source_id"] = source_id
+    if payload is not None:
+        artifact_metadata["payload"] = payload
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO execution_artifacts(artifact_id, execution_id, step_id, artifact_type, name, uri, content_text, metadata_json, created_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (artifact_id, execution_id, step_id, artifact_type, name, uri, content_text, _json_dumps(artifact_metadata), utc_now_iso()),
+        )
+        conn.commit()
+    return _get_required_by_id("execution_artifacts", "artifact_id", artifact_id)
+
+
+def list_execution_artifacts(execution_id: str) -> list[dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM execution_artifacts WHERE execution_id = ? ORDER BY created_at ASC, id ASC",
+            (execution_id,),
+        ).fetchall()
+    return [_row_to_record(row) for row in rows]
+
+
+def record_execution_cost(
+    execution_id: str,
+    step_id: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cost_amount: float = 0,
+    cost_currency: str = "USD",
+    metadata: dict[str, Any] | None = None,
+    cost_type: str | None = None,
+    cost_id: str | None = None,
+) -> dict[str, Any]:
+    cost_id = cost_id or _new_id("cost")
+    cost_metadata = dict(metadata or {})
+    if cost_type is not None:
+        cost_metadata["cost_type"] = cost_type
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO execution_costs(cost_id, execution_id, step_id, provider, model, input_tokens, output_tokens,
+                                        cost_amount, cost_currency, metadata_json, created_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cost_id,
+                execution_id,
+                step_id,
+                provider,
+                model,
+                input_tokens,
+                output_tokens,
+                cost_amount,
+                cost_currency,
+                _json_dumps(cost_metadata),
+                utc_now_iso(),
+            ),
+        )
+        conn.commit()
+    return _get_required_by_id("execution_costs", "cost_id", cost_id)
+
+
+def list_execution_costs(execution_id: str) -> list[dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM execution_costs WHERE execution_id = ? ORDER BY created_at ASC, id ASC",
+            (execution_id,),
+        ).fetchall()
+    return [_row_to_record(row) for row in rows]
+
+
+def request_execution_approval(
+    execution_id: str,
+    approval_type: str,
+    status: str = "pending",
+    step_id: str | None = None,
+    requested_by: str | None = None,
+    approved_by: str | None = None,
+    reason: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    approval_id: str | None = None,
+) -> dict[str, Any]:
+    approval_id = approval_id or _new_id("appr")
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO execution_approvals(approval_id, execution_id, step_id, approval_type, status, requested_by,
+                                            approved_by, requested_at, reason, metadata_json)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                approval_id,
+                execution_id,
+                step_id,
+                approval_type,
+                status,
+                requested_by,
+                approved_by,
+                utc_now_iso(),
+                reason,
+                _json_dumps(metadata),
+            ),
+        )
+        conn.commit()
+    return _get_required_by_id("execution_approvals", "approval_id", approval_id)
+
+
+def list_execution_approvals(execution_id: str) -> list[dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM execution_approvals WHERE execution_id = ? ORDER BY requested_at ASC, id ASC",
+            (execution_id,),
+        ).fetchall()
+    return [_row_to_record(row) for row in rows]
+
+
+def mark_execution_running(execution_id: str) -> dict[str, Any]:
+    return _update_execution_status(execution_id, "running", finished_at=None)
+
+
+def mark_execution_completed(execution_id: str) -> dict[str, Any]:
+    return _update_execution_status(execution_id, "completed", finished_at=utc_now_iso())
+
+
+def mark_execution_failed(execution_id: str) -> dict[str, Any]:
+    return _update_execution_status(execution_id, "failed", finished_at=utc_now_iso())
+
+
+def mark_execution_step_running(step_id: str) -> dict[str, Any]:
+    now = utc_now_iso()
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE execution_steps SET status = ?, started_at = COALESCE(started_at, ?) WHERE step_id = ?",
+            ("running", now, step_id),
+        )
+        conn.commit()
+    return _get_required_by_id("execution_steps", "step_id", step_id)
+
+
+def mark_execution_step_completed(step_id: str) -> dict[str, Any]:
+    return _update_step_status(step_id, "completed")
+
+
+def mark_execution_step_failed(step_id: str) -> dict[str, Any]:
+    return _update_step_status(step_id, "failed")
+
+
+def _update_execution_status(execution_id: str, status: str, finished_at: str | None) -> dict[str, Any]:
+    if finished_at is None:
+        with get_connection() as conn:
+            conn.execute("UPDATE executions SET status = ?, finished_at = NULL WHERE execution_id = ?", (status, execution_id))
+            conn.commit()
+    else:
+        with get_connection() as conn:
+            conn.execute("UPDATE executions SET status = ?, finished_at = ? WHERE execution_id = ?", (status, finished_at, execution_id))
+            conn.commit()
+    record = get_execution(execution_id)
+    if record is None:
+        raise ValueError(f"Execution not found: {execution_id}")
+    return record
+
+
+def _update_step_status(step_id: str, status: str) -> dict[str, Any]:
+    now = utc_now_iso()
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE execution_steps SET status = ?, finished_at = ? WHERE step_id = ?",
+            (status, now, step_id),
+        )
+        conn.commit()
+    return _get_required_by_id("execution_steps", "step_id", step_id)
+
+
+def _get_required_by_id(
+    table: str,
+    id_column: str,
+    id_value: str,
+    json_fields: tuple[str, ...] = ("metadata_json",),
+) -> dict[str, Any]:
+    with get_connection() as conn:
+        row = conn.execute(f"SELECT * FROM {table} WHERE {id_column} = ?", (id_value,)).fetchone()
+    if row is None:
+        raise ValueError(f"{table} row not found: {id_value}")
+    return _row_to_record(row, json_fields=json_fields)
