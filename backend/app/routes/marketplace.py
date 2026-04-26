@@ -78,6 +78,15 @@ def create_listing(payload: ListingInput, authorization: str | None = Header(def
 
     listing_id = f"lst_{uuid.uuid4().hex[:12]}"
     now_iso = _now_iso()
+    # The production frontend queues a local draft as `publish_queued` before
+    # calling this endpoint; lib/agentascend-api.ts maps that to
+    # `queued_review`. There is no separate reviewer/approval call in the live
+    # publish flow, so persisting that value hides the listing from
+    # /marketplace/discover after the draft is deleted. Treat create requests
+    # that arrive as queued_review as an immediate publish, while preserving
+    # explicit draft/rejected creates for non-publish flows.
+    persisted_status = "published" if payload.status == "queued_review" else payload.status
+    published_at = now_iso if persisted_status == "published" else None
 
     with get_connection() as conn:
         conn.execute(
@@ -85,9 +94,9 @@ def create_listing(payload: ListingInput, authorization: str | None = Header(def
             INSERT INTO marketplace_listings (
                 listing_id, creator_user_id, title, description, category,
                 pricing_model, price_amount, price_token, status,
-                tags_json, created_at, updated_at
+                tags_json, created_at, updated_at, published_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 listing_id,
@@ -98,10 +107,11 @@ def create_listing(payload: ListingInput, authorization: str | None = Header(def
                 payload.pricing_model,
                 payload.price_amount,
                 payload.price_token,
-                payload.status,
+                persisted_status,
                 json.dumps(payload.tags),
                 now_iso,
                 now_iso,
+                published_at,
             ),
         )
         row = conn.execute(
