@@ -134,6 +134,78 @@ def list_executions_for_user(user_id: str, limit: int = 50) -> list[dict[str, An
     return [_row_to_record(row) for row in rows]
 
 
+def _execution_status_from_task_status(task_status: str | None) -> str:
+    normalized = (task_status or "").strip().lower()
+    if normalized in {"queued", "running", "completed", "failed"}:
+        return normalized
+    return normalized or "unknown"
+
+
+def backfill_task_executions(limit: int = 100) -> dict[str, Any]:
+    """Create missing task execution ledger rows without running any tasks.
+
+    This helper is intentionally internal/idempotent. It does not run automatically
+    and should not be pointed at production unless a separate canary/runbook has
+    been approved.
+    """
+    backfilled: list[str] = []
+    skipped_existing = 0
+    with get_connection() as conn:
+        task_rows = conn.execute(
+            """
+            SELECT task_id, user_id, agent_id, type, title, status, created_at
+            FROM tasks
+            ORDER BY created_at ASC, id ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        for task in task_rows:
+            existing = conn.execute(
+                "SELECT execution_id FROM executions WHERE source_type='task' AND source_id=? LIMIT 1",
+                (task["task_id"],),
+            ).fetchone()
+            if existing:
+                skipped_existing += 1
+                continue
+            status = _execution_status_from_task_status(task["status"])
+            metadata = {
+                "backfilled": True,
+                "original_task_status": task["status"],
+                "task_id": task["task_id"],
+                "task_type": task["type"],
+            }
+            execution = create_execution(
+                user_id=task["user_id"],
+                source_type="task",
+                source_id=task["task_id"],
+                status=status,
+                agent_id=task["agent_id"],
+                metadata=metadata,
+                db=conn,
+            )
+            append_execution_event(
+                execution["execution_id"],
+                "task_created",
+                payload={
+                    "backfilled": True,
+                    "original_task_status": task["status"],
+                    "status": status,
+                    "task_id": task["task_id"],
+                },
+                message="Backfilled task execution ledger row",
+                db=conn,
+            )
+            backfilled.append(task["task_id"])
+        conn.commit()
+    return {
+        "status": "ok",
+        "backfilled": len(backfilled),
+        "skipped_existing": skipped_existing,
+        "task_ids": backfilled,
+    }
+
+
 def create_execution_step(
     execution_id: str,
     step_order: int,

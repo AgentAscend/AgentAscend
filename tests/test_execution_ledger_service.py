@@ -302,3 +302,81 @@ def test_is_execution_ledger_enabled_defaults_false_and_accepts_truthy(monkeypat
 
     monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "0")
     assert execution_ledger.is_execution_ledger_enabled() is False
+
+
+def _insert_task(conn, task_id: str, status: str, user_id: str = "user_backfill", agent_id: str = "agent_backfill"):
+    conn.execute(
+        """
+        INSERT INTO tasks(task_id, user_id, agent_id, type, title, status, priority, assigned_to, error_message, created_at, updated_at)
+        VALUES (?, ?, ?, 'analysis', ?, ?, 'medium', NULL, NULL, datetime('now'), datetime('now'))
+        """,
+        (task_id, user_id, agent_id, f"Backfill task {task_id}", status),
+    )
+
+
+def test_backfill_task_executions_creates_execution_and_task_created_event(tmp_path):
+    original_db_path = _use_temp_db(tmp_path / "execution-ledger-backfill-one.db")
+    try:
+        with session.get_connection() as conn:
+            _insert_task(conn, "tsk_backfill_one", "queued")
+            conn.commit()
+
+        result = execution_ledger.backfill_task_executions()
+
+        assert result["backfilled"] == 1
+        execution = execution_ledger.get_execution_by_source("task", "tsk_backfill_one")
+        assert execution is not None
+        assert execution["status"] == "queued"
+        assert execution["user_id"] == "user_backfill"
+        assert execution["agent_id"] == "agent_backfill"
+        assert execution["metadata"] == {
+            "backfilled": True,
+            "original_task_status": "queued",
+            "task_id": "tsk_backfill_one",
+            "task_type": "analysis",
+        }
+        events = execution_ledger.list_execution_events(execution["execution_id"])
+        assert [event["event_type"] for event in events] == ["task_created"]
+        assert events[0]["payload"] == {
+            "backfilled": True,
+            "original_task_status": "queued",
+            "status": "queued",
+            "task_id": "tsk_backfill_one",
+        }
+    finally:
+        session.DB_PATH = original_db_path
+
+
+def test_backfill_task_executions_is_idempotent_and_skips_existing_executions(tmp_path):
+    original_db_path = _use_temp_db(tmp_path / "execution-ledger-backfill-idempotent.db")
+    try:
+        with session.get_connection() as conn:
+            _insert_task(conn, "tsk_existing", "completed")
+            _insert_task(conn, "tsk_missing", "failed")
+            conn.commit()
+        existing = execution_ledger.create_execution(
+            user_id="user_backfill",
+            source_type="task",
+            source_id="tsk_existing",
+            status="completed",
+            metadata={"purpose": "already exists"},
+        )
+        execution_ledger.append_execution_event(existing["execution_id"], "task_created", payload={"task_id": "tsk_existing"})
+
+        first = execution_ledger.backfill_task_executions()
+        second = execution_ledger.backfill_task_executions()
+
+        assert first["backfilled"] == 1
+        assert second["backfilled"] == 0
+        with session.get_connection() as conn:
+            execution_count = conn.execute("SELECT COUNT(*) AS count FROM executions").fetchone()["count"]
+            event_count = conn.execute("SELECT COUNT(*) AS count FROM execution_events").fetchone()["count"]
+        assert execution_count == 2
+        assert event_count == 2
+        backfilled = execution_ledger.get_execution_by_source("task", "tsk_missing")
+        assert backfilled["status"] == "failed"
+        assert backfilled["metadata"]["backfilled"] is True
+        assert "password" not in json.dumps(backfilled["metadata"]).lower()
+        assert "token" not in json.dumps(backfilled["metadata"]).lower()
+    finally:
+        session.DB_PATH = original_db_path
