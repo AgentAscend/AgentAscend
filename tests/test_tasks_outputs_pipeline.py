@@ -161,6 +161,36 @@ def test_create_task_writes_execution_ledger_when_enabled(client: TestClient, mo
     assert payload["created_at"]
 
 
+def test_create_task_rolls_back_task_and_ledger_when_enabled_event_write_fails(client: TestClient, monkeypatch):
+    monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+    _user_id, token = _signup(client, "tasks-ledger-failure@example.com")
+
+    from backend.app.services import execution_ledger
+
+    def fail_event_write(*args, **kwargs):
+        raise RuntimeError("simulated execution event write failure")
+
+    monkeypatch.setattr(execution_ledger, "append_execution_event", fail_event_write)
+
+    with pytest.raises(RuntimeError, match="simulated execution event write failure"):
+        client.post(
+            "/tasks",
+            json={"title": "Ledger atomic failure task", "type": "analysis", "agent_id": "agt_atomic"},
+            headers=_auth_header(token),
+        )
+
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        task_count = conn.execute("SELECT COUNT(*) AS count FROM tasks WHERE title=?", ("Ledger atomic failure task",)).fetchone()["count"]
+        executions_count = conn.execute("SELECT COUNT(*) AS count FROM executions WHERE source_type='task'").fetchone()["count"]
+        events_count = conn.execute("SELECT COUNT(*) AS count FROM execution_events").fetchone()["count"]
+
+    assert task_count == 0
+    assert executions_count == 0
+    assert events_count == 0
+
+
 def test_scheduler_worker_completes_queued_task_and_creates_output(client: TestClient):
     user_id, token = _signup(client, "tasks-worker-owner@example.com")
     create = client.post(

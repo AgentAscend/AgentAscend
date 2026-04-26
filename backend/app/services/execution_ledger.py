@@ -73,10 +73,12 @@ def create_execution(
     metadata: dict[str, Any] | None = None,
     execution_id: str | None = None,
     agent_id: str | None = None,
+    db: Any | None = None,
 ) -> dict[str, Any]:
     execution_id = execution_id or _new_id("exec")
     now = utc_now_iso()
-    with get_connection() as conn:
+
+    def insert(conn: Any) -> dict[str, Any] | None:
         conn.execute(
             """
             INSERT INTO executions(execution_id, source_type, source_id, user_id, agent_id, status, started_at, metadata_json)
@@ -84,8 +86,16 @@ def create_execution(
             """,
             (execution_id, source_type, source_id, user_id, agent_id, status, now, _json_dumps(metadata)),
         )
-        conn.commit()
-    record = get_execution(execution_id)
+        row = conn.execute("SELECT * FROM executions WHERE execution_id = ?", (execution_id,)).fetchone()
+        return _row_to_record(row) if row is not None else None
+
+    if db is not None:
+        record = insert(db)
+    else:
+        with get_connection() as conn:
+            insert(conn)
+            conn.commit()
+        record = get_execution(execution_id)
     if record is None:
         raise RuntimeError(f"Execution was not created: {execution_id}")
     return record
@@ -145,9 +155,11 @@ def append_execution_event(
     message: str | None = None,
     step_id: str | None = None,
     event_id: str | None = None,
+    db: Any | None = None,
 ) -> dict[str, Any]:
     event_id = event_id or _new_id("evt")
-    with get_connection() as conn:
+
+    def insert(conn: Any) -> dict[str, Any] | None:
         conn.execute(
             """
             INSERT INTO execution_events(event_id, execution_id, step_id, event_type, level, message, payload_json, created_at)
@@ -155,8 +167,19 @@ def append_execution_event(
             """,
             (event_id, execution_id, step_id, event_type, level, message, _json_dumps(payload), utc_now_iso()),
         )
-        conn.commit()
-    return _get_required_by_id("execution_events", "event_id", event_id, json_fields=("payload_json",))
+        row = conn.execute("SELECT * FROM execution_events WHERE event_id = ?", (event_id,)).fetchone()
+        return _row_to_record(row, json_fields=("payload_json",)) if row is not None else None
+
+    if db is not None:
+        record = insert(db)
+    else:
+        with get_connection() as conn:
+            insert(conn)
+            conn.commit()
+        record = _get_required_by_id("execution_events", "event_id", event_id, json_fields=("payload_json",))
+    if record is None:
+        raise RuntimeError(f"Execution event was not created: {event_id}")
+    return record
 
 
 def list_execution_events(execution_id: str) -> list[dict[str, Any]]:

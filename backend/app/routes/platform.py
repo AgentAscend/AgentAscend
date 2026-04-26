@@ -920,7 +920,7 @@ class TaskCreateInput(BaseModel):
     assigned_to: str | None = None
 
 
-def _write_task_creation_ledger(task_id: str, actor: str, payload: TaskCreateInput, created_at: str | None) -> None:
+def _write_task_creation_ledger(conn, task_id: str, actor: str, payload: TaskCreateInput, created_at: str | None) -> None:
     if not execution_ledger.is_execution_ledger_enabled():
         return
 
@@ -935,6 +935,7 @@ def _write_task_creation_ledger(task_id: str, actor: str, payload: TaskCreateInp
             "task_title": payload.title,
             "task_type": payload.type,
         },
+        db=conn,
     )
     execution_ledger.append_execution_event(
         execution_id=execution["execution_id"],
@@ -944,6 +945,7 @@ def _write_task_creation_ledger(task_id: str, actor: str, payload: TaskCreateInp
             "status": "queued",
             "created_at": created_at,
         },
+        db=conn,
     )
 
 
@@ -964,8 +966,8 @@ def create_task(payload: TaskCreateInput, background_tasks: BackgroundTasks, aut
             (task_id, f"Task created by {actor}"),
         )
         task_row = conn.execute("SELECT created_at FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        _write_task_creation_ledger(conn, task_id, actor, payload, task_row["created_at"] if task_row else None)
         conn.commit()
-    _write_task_creation_ledger(task_id, actor, payload, task_row["created_at"] if task_row else None)
     _audit(actor, "task.create", "task", task_id, {"priority": payload.priority})
     background_tasks.add_task(_trigger_task_queue_worker)
     return {"status": "ok", "task_id": task_id}
