@@ -275,6 +275,127 @@ def test_output_list_requires_auth_and_is_scoped_to_signed_in_user(client: TestC
     assert forbidden.status_code == 403
 
 
+def test_delete_task_requires_auth(client: TestClient):
+    _user_id, token = _signup(client, "tasks-delete-auth-owner@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Delete auth task", "type": "analysis", "agent_id": "agt_delete"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+
+    response = client.delete(f"/tasks/{create.json()['task_id']}")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
+
+
+def test_task_owner_can_delete_task_and_it_disappears_from_task_list(client: TestClient):
+    _user_id, token = _signup(client, "tasks-delete-owner@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Delete visible task", "type": "analysis", "agent_id": "agt_delete"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    response = client.delete(f"/tasks/{task_id}", headers=_auth_header(token))
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok", "deleted": True}
+    detail = client.get(f"/tasks/{task_id}")
+    assert detail.status_code == 404
+    tasks_response = client.get("/tasks", headers=_auth_header(token))
+    assert tasks_response.status_code == 200, tasks_response.text
+    assert all(task["task_id"] != task_id for task in tasks_response.json()["tasks"])
+
+
+def test_user_cannot_delete_another_users_task(client: TestClient):
+    _owner_id, owner_token = _signup(client, "tasks-delete-real-owner@example.com")
+    _other_id, other_token = _signup(client, "tasks-delete-attacker@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Protected task", "type": "analysis", "agent_id": "agt_delete"},
+        headers=_auth_header(owner_token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    forbidden = client.delete(f"/tasks/{task_id}", headers=_auth_header(other_token))
+
+    assert forbidden.status_code == 403
+    assert forbidden.json()["error"]["code"] == "forbidden"
+    owner_tasks = client.get("/tasks", headers=_auth_header(owner_token)).json()["tasks"]
+    assert any(task["task_id"] == task_id for task in owner_tasks)
+
+
+def test_admin_can_delete_another_users_task(client: TestClient, monkeypatch):
+    _owner_id, owner_token = _signup(client, "tasks-delete-admin-owner@example.com")
+    admin_id, admin_token = _signup(client, "tasks-delete-admin@example.com")
+    monkeypatch.setenv("ADMIN_USER_IDS", admin_id)
+    create = client.post(
+        "/tasks",
+        json={"title": "Admin deletable task", "type": "analysis", "agent_id": "agt_delete"},
+        headers=_auth_header(owner_token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    response = client.delete(f"/tasks/{task_id}", headers=_auth_header(admin_token))
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok", "deleted": True}
+    assert client.get(f"/tasks/{task_id}").status_code == 404
+
+
+def test_delete_task_removes_related_outputs_and_logs(client: TestClient):
+    _user_id, token = _signup(client, "tasks-delete-outputs-owner@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Delete output task", "type": "analysis", "agent_id": "agt_delete"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    import backend.app.db.session as session
+    from backend.app.services.job_runner import run_job_once
+
+    with session.get_connection() as conn:
+        job = conn.execute("SELECT id FROM scheduled_jobs WHERE job_type='task_queue_worker'").fetchone()
+    assert job is not None
+    run_job_once(job["id"])
+
+    outputs_before = client.get(f"/outputs?task_id={task_id}", headers=_auth_header(token))
+    assert outputs_before.status_code == 200, outputs_before.text
+    assert len(outputs_before.json()["outputs"]) == 1
+    logs_before = client.get(f"/tasks/{task_id}/logs")
+    assert logs_before.status_code == 200, logs_before.text
+    assert logs_before.json()["logs"]
+
+    response = client.delete(f"/tasks/{task_id}", headers=_auth_header(token))
+
+    assert response.status_code == 200, response.text
+    outputs_after = client.get(f"/outputs?task_id={task_id}", headers=_auth_header(token))
+    assert outputs_after.status_code == 200, outputs_after.text
+    assert outputs_after.json()["outputs"] == []
+    with session.get_connection() as conn:
+        output_count = conn.execute("SELECT COUNT(*) AS count FROM outputs WHERE task_id=?", (task_id,)).fetchone()["count"]
+        log_count = conn.execute("SELECT COUNT(*) AS count FROM task_logs WHERE task_id=?", (task_id,)).fetchone()["count"]
+    assert output_count == 0
+    assert log_count == 0
+
+
+def test_delete_missing_task_returns_404(client: TestClient):
+    _user_id, token = _signup(client, "tasks-delete-missing-owner@example.com")
+
+    response = client.delete("/tasks/tsk_missing", headers=_auth_header(token))
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
 def test_row_dict_serializes_datetime_values_for_postgres_rows():
     from backend.app.routes.platform import _row_dict
 

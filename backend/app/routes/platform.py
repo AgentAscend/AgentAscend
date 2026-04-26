@@ -981,6 +981,27 @@ def cancel_task(task_id: str, authorization: str | None = Header(default=None)):
     return {"status": "ok", "task_id": task_id, "new_status": "failed"}
 
 
+@router.delete("/tasks/{task_id}")
+def delete_task(task_id: str, authorization: str | None = Header(default=None)):
+    auth = resolve_session(authorization)
+    actor = auth["user"]
+
+    with get_connection() as conn:
+        task = conn.execute("SELECT task_id, user_id FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        if not task:
+            fail(404, "not_found", "Task not found")
+        if task["user_id"] != actor["user_id"] and actor.get("role") != "admin":
+            fail(403, "forbidden", "Authenticated user cannot delete another user's task")
+
+        conn.execute("DELETE FROM outputs WHERE task_id=?", (task_id,))
+        conn.execute("DELETE FROM task_logs WHERE task_id=?", (task_id,))
+        conn.execute("DELETE FROM tasks WHERE task_id=?", (task_id,))
+        conn.commit()
+
+    _audit(actor["user_id"], "task.delete", "task", task_id)
+    return {"status": "ok", "deleted": True}
+
+
 @router.get("/tasks/{task_id}/logs")
 def get_task_logs(task_id: str):
     with get_connection() as conn:
