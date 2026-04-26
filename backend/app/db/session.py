@@ -498,8 +498,19 @@ def init_db():
                 title TEXT NOT NULL,
                 body TEXT NOT NULL,
                 likes INTEGER NOT NULL DEFAULT 0,
-                created_at DATETIME NOT NULL
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
+            """
+        )
+        community_post_columns = {row[1] for row in conn.execute("PRAGMA table_info(community_posts)").fetchall()}
+        if "updated_at" not in community_post_columns:
+            conn.execute("ALTER TABLE community_posts ADD COLUMN updated_at DATETIME")
+        conn.execute(
+            """
+            UPDATE community_posts
+            SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)
+            WHERE updated_at IS NULL
             """
         )
 

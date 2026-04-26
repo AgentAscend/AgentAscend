@@ -289,7 +289,7 @@ def community_feed():
     with get_connection() as conn:
         posts_rows = conn.execute(
             """
-            SELECT post_id, author_user_id, title, body, likes, created_at
+            SELECT post_id, author_user_id, title, body, likes, created_at, updated_at
             FROM community_posts
             ORDER BY created_at DESC
             LIMIT 30
@@ -979,6 +979,96 @@ class CommunityCreateInput(BaseModel):
     body: str
 
 
+class CommunityPatchInput(BaseModel):
+    title: str | None = None
+    body: str | None = None
+
+
+def _community_post_payload(row) -> dict:
+    if not row:
+        fail(404, "not_found", "Community post not found")
+    return {
+        "post_id": row["post_id"],
+        "author_user_id": row["author_user_id"],
+        "title": row["title"],
+        "body": row["body"],
+        "likes": row["likes"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _get_community_post_row(conn, post_id: str):
+    return conn.execute(
+        """
+        SELECT post_id, author_user_id, title, body, likes, created_at, updated_at
+        FROM community_posts
+        WHERE post_id=?
+        """,
+        (post_id,),
+    ).fetchone()
+
+
+@router.get("/community/posts/{post_id}")
+def get_community_post(post_id: str):
+    with get_connection() as conn:
+        row = _get_community_post_row(conn, post_id)
+    return {"status": "ok", "post": _community_post_payload(row)}
+
+
+@router.patch("/community/posts/{post_id}")
+def patch_community_post(
+    post_id: str,
+    payload: CommunityPatchInput,
+    authorization: str | None = Header(default=None),
+):
+    auth = resolve_session(authorization)
+    actor = auth["user"]["user_id"]
+    role = auth["user"].get("role")
+
+    with get_connection() as conn:
+        row = _get_community_post_row(conn, post_id)
+        if not row:
+            fail(404, "not_found", "Community post not found")
+        if row["author_user_id"] != actor and role != "admin":
+            fail(403, "forbidden", "Authenticated user cannot edit this community post")
+
+        title = payload.title if payload.title is not None else row["title"]
+        body = payload.body if payload.body is not None else row["body"]
+        conn.execute(
+            """
+            UPDATE community_posts
+            SET title=?, body=?, updated_at=datetime('now')
+            WHERE post_id=?
+            """,
+            (title, body, post_id),
+        )
+        updated = _get_community_post_row(conn, post_id)
+        conn.commit()
+
+    _audit(actor, "community.post.edit", "post", post_id)
+    return {"status": "ok", "post": _community_post_payload(updated)}
+
+
+@router.delete("/community/posts/{post_id}")
+def delete_community_post(post_id: str, authorization: str | None = Header(default=None)):
+    auth = resolve_session(authorization)
+    actor = auth["user"]["user_id"]
+    role = auth["user"].get("role")
+
+    with get_connection() as conn:
+        row = _get_community_post_row(conn, post_id)
+        if not row:
+            fail(404, "not_found", "Community post not found")
+        if row["author_user_id"] != actor and role != "admin":
+            fail(403, "forbidden", "Authenticated user cannot delete this community post")
+        conn.execute("DELETE FROM community_posts WHERE post_id=?", (post_id,))
+        conn.commit()
+
+    _audit(actor, "community.post.delete", "post", post_id)
+    return {"status": "ok", "deleted": True}
+
+
 @router.post("/community/posts")
 def create_community_post(payload: CommunityCreateInput, authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)
@@ -986,8 +1076,8 @@ def create_community_post(payload: CommunityCreateInput, authorization: str | No
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO community_posts(post_id, author_user_id, title, body, likes, created_at)
-            VALUES(?, ?, ?, ?, 0, datetime('now'))
+            INSERT INTO community_posts(post_id, author_user_id, title, body, likes, created_at, updated_at)
+            VALUES(?, ?, ?, ?, 0, datetime('now'), datetime('now'))
             """,
             (post_id, actor, payload.title, payload.body),
         )

@@ -146,6 +146,7 @@ class CommunityPost(BaseModel):
     body: str
     likes: int = 0
     created_at: str
+    updated_at: str
 
 
 class LeaderboardEntry(BaseModel):
