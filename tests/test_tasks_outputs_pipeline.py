@@ -1,5 +1,6 @@
 import importlib
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -28,7 +29,17 @@ def client(tmp_path, monkeypatch):
 def _signup(client: TestClient, email: str = "tasks-owner@example.com"):
     response = client.post(
         "/auth/signup",
-        json={"email": email, "password": "HermesTest123!", "display_name": "Task Owner"},
+        json={"email": email, "password": "testpass", "display_name": "Task Owner"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    return body["user"]["user_id"], body["session_token"]
+
+
+def _signin(client: TestClient, email: str):
+    response = client.post(
+        "/auth/signin",
+        json={"email": email, "password": "testpass"},
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -72,7 +83,9 @@ def test_create_task_stores_real_job_fields(client: TestClient):
     assert task["created_at"]
     assert task["updated_at"]
 
-    feed = client.get("/tasks").json()["tasks"]
+    feed_response = client.get("/tasks", headers=_auth_header(token))
+    assert feed_response.status_code == 200, feed_response.text
+    feed = feed_response.json()["tasks"]
     assert any(item["task_id"] == task_id and item["user_id"] == user_id for item in feed)
 
 
@@ -100,7 +113,9 @@ def test_scheduler_worker_completes_queued_task_and_creates_output(client: TestC
     assert task["status"] == "completed"
     assert task["error_message"] is None
 
-    outputs = client.get("/outputs").json()["outputs"]
+    outputs_response = client.get("/outputs", headers=_auth_header(token))
+    assert outputs_response.status_code == 200, outputs_response.text
+    outputs = outputs_response.json()["outputs"]
     matching = [output for output in outputs if output["task_id"] == task_id]
     assert len(matching) == 1
     output = matching[0]
@@ -134,7 +149,9 @@ def test_scheduler_worker_records_failed_task_error_without_output(client: TestC
     assert task["status"] == "failed"
     assert "Simulated task failure" in task["error_message"]
 
-    outputs = client.get("/outputs").json()["outputs"]
+    outputs_response = client.get("/outputs", headers=_auth_header(token))
+    assert outputs_response.status_code == 200, outputs_response.text
+    outputs = outputs_response.json()["outputs"]
     assert all(output["task_id"] != task_id for output in outputs)
 
 
@@ -154,8 +171,125 @@ def test_outputs_can_be_filtered_by_task_and_user(client: TestClient):
         job = conn.execute("SELECT id FROM scheduled_jobs WHERE job_type='task_queue_worker'").fetchone()
     run_job_once(job["id"])
 
-    by_task = client.get(f"/outputs?task_id={task_id}").json()["outputs"]
-    by_user = client.get(f"/outputs?user_id={user_id}").json()["outputs"]
+    by_task_response = client.get(f"/outputs?task_id={task_id}", headers=_auth_header(token))
+    by_user_response = client.get(f"/outputs?user_id={user_id}", headers=_auth_header(token))
+    assert by_task_response.status_code == 200, by_task_response.text
+    assert by_user_response.status_code == 200, by_user_response.text
+    by_task = by_task_response.json()["outputs"]
+    by_user = by_user_response.json()["outputs"]
     assert len(by_task) == 1
     assert len(by_user) == 1
     assert by_task[0]["output_id"] == by_user[0]["output_id"]
+
+
+def test_task_list_requires_auth_and_is_scoped_to_signed_in_user(client: TestClient):
+    owner_id, owner_token = _signup(client, "tasks-scoped-owner@example.com")
+    other_id, other_token = _signup(client, "tasks-scoped-other@example.com")
+
+    create_owner = client.post(
+        "/tasks",
+        json={"title": "Owner private task", "type": "analysis", "agent_id": "agt_owner"},
+        headers=_auth_header(owner_token),
+    )
+    create_other = client.post(
+        "/tasks",
+        json={"title": "Other private task", "type": "analysis", "agent_id": "agt_other"},
+        headers=_auth_header(other_token),
+    )
+    assert create_owner.status_code == 200, create_owner.text
+    assert create_other.status_code == 200, create_other.text
+    owner_task_id = create_owner.json()["task_id"]
+    other_task_id = create_other.json()["task_id"]
+
+    no_auth = client.get("/tasks")
+    assert no_auth.status_code == 401
+
+    owner_tasks_response = client.get("/tasks", headers=_auth_header(owner_token))
+    assert owner_tasks_response.status_code == 200, owner_tasks_response.text
+    owner_tasks = owner_tasks_response.json()["tasks"]
+    assert any(task["task_id"] == owner_task_id and task["user_id"] == owner_id for task in owner_tasks)
+    assert all(task["user_id"] == owner_id for task in owner_tasks)
+    assert all(task["task_id"] != other_task_id for task in owner_tasks)
+
+    forbidden = client.get(f"/tasks?user_id={other_id}", headers=_auth_header(owner_token))
+    assert forbidden.status_code == 403
+
+
+def test_task_list_persists_after_signin_again(client: TestClient):
+    email = "tasks-resignin-owner@example.com"
+    user_id, token = _signup(client, email)
+    create = client.post(
+        "/tasks",
+        json={"title": "Persist after signin", "type": "analysis", "agent_id": "agt_resignin"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    signed_in_user_id, second_token = _signin(client, email)
+    assert signed_in_user_id == user_id
+
+    response = client.get("/tasks", headers=_auth_header(second_token))
+    assert response.status_code == 200, response.text
+    tasks = response.json()["tasks"]
+    assert any(task["task_id"] == task_id and task["user_id"] == user_id for task in tasks)
+
+
+def test_output_list_requires_auth_and_is_scoped_to_signed_in_user(client: TestClient):
+    owner_id, owner_token = _signup(client, "outputs-scoped-owner@example.com")
+    other_id, other_token = _signup(client, "outputs-scoped-other@example.com")
+
+    owner_create = client.post(
+        "/tasks",
+        json={"title": "Owner output", "type": "analysis", "agent_id": "agt_output_owner"},
+        headers=_auth_header(owner_token),
+    )
+    other_create = client.post(
+        "/tasks",
+        json={"title": "Other output", "type": "analysis", "agent_id": "agt_output_other"},
+        headers=_auth_header(other_token),
+    )
+    assert owner_create.status_code == 200, owner_create.text
+    assert other_create.status_code == 200, other_create.text
+    owner_task_id = owner_create.json()["task_id"]
+    other_task_id = other_create.json()["task_id"]
+
+    import backend.app.db.session as session
+    from backend.app.services.job_runner import run_job_once
+
+    with session.get_connection() as conn:
+        job = conn.execute("SELECT id FROM scheduled_jobs WHERE job_type='task_queue_worker'").fetchone()
+    run_job_once(job["id"])
+
+    no_auth = client.get("/outputs")
+    assert no_auth.status_code == 401
+
+    owner_outputs_response = client.get("/outputs", headers=_auth_header(owner_token))
+    assert owner_outputs_response.status_code == 200, owner_outputs_response.text
+    owner_outputs = owner_outputs_response.json()["outputs"]
+    assert any(output["task_id"] == owner_task_id and output["user_id"] == owner_id for output in owner_outputs)
+    assert all(output["user_id"] == owner_id for output in owner_outputs)
+    assert all(output["task_id"] != other_task_id for output in owner_outputs)
+
+    forbidden = client.get(f"/outputs?user_id={other_id}", headers=_auth_header(owner_token))
+    assert forbidden.status_code == 403
+
+
+def test_row_dict_serializes_datetime_values_for_postgres_rows():
+    from backend.app.routes.platform import _row_dict
+
+    class FakeRow:
+        def __iter__(self):
+            return iter({
+                "task_id": "tsk_datetime",
+                "created_at": datetime(2026, 4, 26, 3, 59, 52, tzinfo=timezone.utc),
+                "title": "Datetime task",
+            }.items())
+
+    result = _row_dict(FakeRow())
+
+    assert result == {
+        "task_id": "tsk_datetime",
+        "created_at": "2026-04-26T03:59:52+00:00",
+        "title": "Datetime task",
+    }

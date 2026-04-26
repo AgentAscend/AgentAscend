@@ -66,7 +66,26 @@ def _require_user_id(authorization: str | None) -> str:
 
 
 def _row_dict(row):
-    return dict(row) if row is not None else None
+    if row is None:
+        return None
+
+    result = {}
+    for k, v in dict(row).items():
+        if hasattr(v, "isoformat"):
+            result[k] = v.isoformat()
+        else:
+            result[k] = v
+    return result
+
+
+def _authorized_scope_user_id(user_id: str | None, authorization: str | None) -> str:
+    auth = resolve_session(authorization)
+    actor = auth["user"]
+    if user_id:
+        if actor["user_id"] != user_id and actor.get("role") != "admin":
+            fail(403, "forbidden", "Authenticated user cannot access another user's data")
+        return user_id
+    return actor["user_id"]
 
 
 def _trigger_task_queue_worker():
@@ -263,7 +282,8 @@ def list_workflows():
 
 
 @router.get("/tasks", response_model=TaskListResponse)
-def list_tasks(status: str | None = None, user_id: str | None = None):
+def list_tasks(status: str | None = None, user_id: str | None = None, authorization: str | None = Header(default=None)):
+    scoped_user_id = _authorized_scope_user_id(user_id, authorization)
     query = """
         SELECT task_id, user_id, agent_id, type, title, status, priority, assigned_to, error_message, created_at, updated_at
         FROM tasks
@@ -273,9 +293,8 @@ def list_tasks(status: str | None = None, user_id: str | None = None):
     if status:
         clauses.append("status=?")
         params.append(status)
-    if user_id:
-        clauses.append("user_id=?")
-        params.append(user_id)
+    clauses.append("user_id=?")
+    params.append(scoped_user_id)
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
     query += " ORDER BY updated_at DESC"
@@ -287,7 +306,8 @@ def list_tasks(status: str | None = None, user_id: str | None = None):
 
 
 @router.get("/outputs", response_model=OutputListResponse)
-def list_outputs(task_id: str | None = None, user_id: str | None = None):
+def list_outputs(task_id: str | None = None, user_id: str | None = None, authorization: str | None = Header(default=None)):
+    scoped_user_id = _authorized_scope_user_id(user_id, authorization)
     query = """
             SELECT output_id, task_id, user_id, title, output_type, content, text, file_url, size_bytes, download_url, created_at
             FROM outputs
@@ -297,9 +317,8 @@ def list_outputs(task_id: str | None = None, user_id: str | None = None):
     if task_id:
         clauses.append("task_id=?")
         params.append(task_id)
-    if user_id:
-        clauses.append("user_id=?")
-        params.append(user_id)
+    clauses.append("user_id=?")
+    params.append(scoped_user_id)
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
     query += " ORDER BY created_at DESC"
@@ -701,7 +720,7 @@ def get_agent(agent_id: str, authorization: str | None = Header(default=None)):
         ).fetchone()
     if not row:
         fail(404, "not_found", "Agent not found")
-    return {"status": "ok", "agent": dict(row)}
+    return {"status": "ok", "agent": _row_dict(row)}
 
 
 @router.patch("/agents/{agent_id}")
@@ -778,7 +797,7 @@ def get_deployment(deployment_id: str):
         ).fetchone()
     if not row:
         fail(404, "not_found", "Deployment not found")
-    return {"status": "ok", "deployment": dict(row)}
+    return {"status": "ok", "deployment": _row_dict(row)}
 
 
 @router.get("/deployments/{deployment_id}/metrics")
@@ -794,7 +813,7 @@ def deployment_metrics(deployment_id: str):
             """,
             (deployment_id,),
         ).fetchall()
-    return {"status": "ok", "deployment_id": deployment_id, "metrics": [dict(r) for r in rows]}
+    return {"status": "ok", "deployment_id": deployment_id, "metrics": [_row_dict(r) for r in rows]}
 
 
 class WorkflowCrudInput(BaseModel):
@@ -889,7 +908,7 @@ def list_workflow_runs(workflow_id: str):
             """,
             (workflow_id,),
         ).fetchall()
-    return {"status": "ok", "workflow_id": workflow_id, "runs": [dict(r) for r in rows]}
+    return {"status": "ok", "workflow_id": workflow_id, "runs": [_row_dict(r) for r in rows]}
 
 
 class TaskCreateInput(BaseModel):
@@ -931,7 +950,7 @@ def get_task(task_id: str):
         ).fetchone()
     if not row:
         fail(404, "not_found", "Task not found")
-    return {"status": "ok", "task": dict(row)}
+    return {"status": "ok", "task": _row_dict(row)}
 
 
 def _set_task_status(task_id: str, new_status: str, actor: str, message: str):
@@ -969,7 +988,7 @@ def get_task_logs(task_id: str):
             "SELECT level, message, created_at FROM task_logs WHERE task_id=? ORDER BY created_at DESC LIMIT 200",
             (task_id,),
         ).fetchall()
-    return {"status": "ok", "task_id": task_id, "logs": [dict(r) for r in rows]}
+    return {"status": "ok", "task_id": task_id, "logs": [_row_dict(r) for r in rows]}
 
 
 @router.get("/outputs/{output_id}")
@@ -981,7 +1000,7 @@ def get_output(output_id: str):
         ).fetchone()
     if not row:
         fail(404, "not_found", "Output not found")
-    return {"status": "ok", "output": dict(row)}
+    return {"status": "ok", "output": _row_dict(row)}
 
 
 @router.get("/outputs/{output_id}/download-url")
@@ -1129,7 +1148,7 @@ def get_profile_extras(authorization: str | None = Header(default=None)):
             "SELECT timezone, language, website_url, location, updated_at FROM user_profile_extras WHERE user_id=?",
             (user_id,),
         ).fetchone()
-    return {"status": "ok", "user_id": user_id, "extras": dict(row) if row else {}}
+    return {"status": "ok", "user_id": user_id, "extras": _row_dict(row) if row else {}}
 
 
 @router.patch("/users/me/profile/extras")
@@ -1172,7 +1191,7 @@ def list_api_keys(authorization: str | None = Header(default=None)):
             "SELECT key_id, name, status, created_at, last_used_at FROM api_keys WHERE user_id=? ORDER BY created_at DESC",
             (user_id,),
         ).fetchall()
-    return {"status": "ok", "api_keys": [dict(r) for r in rows]}
+    return {"status": "ok", "api_keys": [_row_dict(r) for r in rows]}
 
 
 @router.post("/users/me/api-keys")
@@ -1261,7 +1280,7 @@ def token_staking_positions(user_id: str, authorization: str | None = Header(def
             """,
             (user_id,),
         ).fetchall()
-    return {"status": "ok", "user_id": user_id, "positions": [dict(r) for r in rows]}
+    return {"status": "ok", "user_id": user_id, "positions": [_row_dict(r) for r in rows]}
 
 
 @router.get("/token/rewards/ledger")
@@ -1275,7 +1294,7 @@ def token_rewards_ledger(user_id: str, authorization: str | None = Header(defaul
             """,
             (user_id,),
         ).fetchall()
-    return {"status": "ok", "user_id": user_id, "entries": [dict(r) for r in rows]}
+    return {"status": "ok", "user_id": user_id, "entries": [_row_dict(r) for r in rows]}
 
 
 @router.get("/token/transactions")
@@ -1320,7 +1339,7 @@ def marketplace_discover(query: str | None = None, category: str | None = None, 
 
     with get_connection() as conn:
         rows = conn.execute(sql, tuple(params)).fetchall()
-    return {"status": "ok", "query": query or "", "category": category, "sort": sort, "listings": [dict(r) for r in rows]}
+    return {"status": "ok", "query": query or "", "category": category, "sort": sort, "listings": [_row_dict(r) for r in rows]}
 
 
 @router.get("/marketplace/licenses")
@@ -1336,7 +1355,7 @@ def marketplace_licenses(user_id: str, authorization: str | None = Header(defaul
             """,
             (user_id,),
         ).fetchall()
-    return {"status": "ok", "user_id": user_id, "licenses": [dict(r) for r in rows]}
+    return {"status": "ok", "user_id": user_id, "licenses": [_row_dict(r) for r in rows]}
 
 
 @router.get("/marketplace/listings/{listing_id}/install-events")
@@ -1352,7 +1371,7 @@ def listing_install_events(listing_id: str):
             """,
             (listing_id,),
         ).fetchall()
-    return {"status": "ok", "listing_id": listing_id, "events": [dict(r) for r in rows]}
+    return {"status": "ok", "listing_id": listing_id, "events": [_row_dict(r) for r in rows]}
 
 
 @router.post("/marketplace/listings/{listing_id}/install-track")
@@ -1387,7 +1406,7 @@ def audit_events(limit: int = 200):
     return {
         "status": "ok",
         "events": [
-            {**dict(r), "metadata": json.loads(r["metadata_json"])}
+            {**_row_dict(r), "metadata": json.loads(r["metadata_json"])}
             for r in rows
         ],
     }
@@ -1409,7 +1428,7 @@ def ops_alerts(status: str | None = None):
     sql += " ORDER BY updated_at DESC"
     with get_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
-    return {"status": "ok", "alerts": [dict(r) for r in rows]}
+    return {"status": "ok", "alerts": [_row_dict(r) for r in rows]}
 
 
 @router.post("/ops/alerts")
