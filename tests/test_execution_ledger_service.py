@@ -1,4 +1,9 @@
 import json
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from uuid import UUID
+
+import pytest
 
 from backend.app.db import session
 from backend.app.services import execution_ledger
@@ -9,6 +14,50 @@ def _use_temp_db(db_path):
     session.DB_PATH = db_path
     session.init_db()
     return original_db_path
+
+
+def test_json_dumps_normalizes_postgres_style_values_and_nested_containers():
+    created_at = datetime(2026, 4, 26, 21, 14, 15, 123456, tzinfo=timezone.utc)
+    due_date = date(2026, 4, 27)
+    execution_uuid = UUID("12345678-1234-5678-1234-567812345678")
+
+    dumped = execution_ledger._json_dumps(
+        {
+            "amount": Decimal("12.3400"),
+            "created_at": created_at,
+            "due_date": due_date,
+            "nested": {
+                "items": (created_at, due_date, execution_uuid, None, True, 7, "ok"),
+            },
+            "uuid": execution_uuid,
+        }
+    )
+
+    assert json.loads(dumped) == {
+        "amount": "12.3400",
+        "created_at": "2026-04-26T21:14:15.123456+00:00",
+        "due_date": "2026-04-27",
+        "nested": {
+            "items": [
+                "2026-04-26T21:14:15.123456+00:00",
+                "2026-04-27",
+                "12345678-1234-5678-1234-567812345678",
+                None,
+                True,
+                7,
+                "ok",
+            ],
+        },
+        "uuid": "12345678-1234-5678-1234-567812345678",
+    }
+
+
+def test_json_dumps_still_rejects_unrecognized_objects():
+    class UnsupportedValue:
+        pass
+
+    with pytest.raises(TypeError, match="not JSON serializable"):
+        execution_ledger._json_dumps({"unsupported": UnsupportedValue()})
 
 
 def test_create_execution_creates_row_and_serializes_metadata(tmp_path):

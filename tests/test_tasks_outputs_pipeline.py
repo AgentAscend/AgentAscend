@@ -164,6 +164,40 @@ def test_create_task_writes_execution_ledger_when_enabled(client: TestClient, mo
     assert payload["created_at"]
 
 
+def test_task_created_ledger_payload_accepts_postgres_datetime_created_at(client: TestClient, monkeypatch):
+    monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+    import backend.app.db.session as session
+    import backend.app.routes.platform as platform
+
+    user_id, _token = _signup(client, "tasks-ledger-postgres-datetime@example.com")
+    created_at = datetime(2026, 4, 26, 21, 30, 1, tzinfo=timezone.utc)
+
+    with session.get_connection() as conn:
+        platform._write_task_creation_ledger(
+            conn,
+            "tsk_postgres_datetime",
+            user_id,
+            platform.TaskCreateInput(title="Postgres datetime payload", type="analysis", agent_id="agt_datetime"),
+            created_at,
+        )
+        conn.commit()
+        execution = conn.execute(
+            "SELECT * FROM executions WHERE source_type='task' AND source_id='tsk_postgres_datetime'",
+        ).fetchone()
+        event = conn.execute(
+            "SELECT * FROM execution_events WHERE execution_id=? AND event_type='task_created'",
+            (execution["execution_id"],),
+        ).fetchone()
+
+    assert execution["user_id"] == user_id
+    payload = json.loads(event["payload_json"])
+    assert payload == {
+        "created_at": "2026-04-26T21:30:01+00:00",
+        "status": "queued",
+        "task_id": "tsk_postgres_datetime",
+    }
+
+
 def test_create_task_rolls_back_task_and_ledger_when_enabled_event_write_fails(client: TestClient, monkeypatch):
     monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
     _user_id, token = _signup(client, "tasks-ledger-failure@example.com")

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from backend.app.db.session import get_connection, utc_now_iso
@@ -42,10 +44,29 @@ def _assert_no_sensitive_keys(value: Any, path: str = "payload") -> None:
             _assert_no_sensitive_keys(nested, f"{path}[{index}]")
 
 
+def _normalize_json_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _normalize_json_value(nested) for key, nested in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_normalize_json_value(nested) for nested in value]
+    return value
+
+
 def _json_dumps(value: dict[str, Any] | None) -> str:
     payload = value or {}
     _assert_no_sensitive_keys(payload)
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    normalized_payload = _normalize_json_value(payload)
+    return json.dumps(normalized_payload, sort_keys=True, separators=(",", ":"))
 
 
 def _json_loads(value: str | None) -> dict[str, Any]:
