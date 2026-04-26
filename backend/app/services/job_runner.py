@@ -243,6 +243,97 @@ def _roadmap_review(_job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _execute_user_task(task: dict[str, Any]) -> str:
+    task_type = str(task.get("type") or "general").strip().lower()
+    title = str(task.get("title") or "Untitled task").strip()
+    agent_id = str(task.get("agent_id") or task.get("assigned_to") or "unassigned")
+    if task_type == "fail":
+        raise RuntimeError("Simulated task failure requested by task type")
+    return "\n".join(
+        [
+            f"Task completed: {title}",
+            f"Task type: {task_type}",
+            f"Agent: {agent_id}",
+            "Execution mode: scheduler-simulated backend job",
+        ]
+    )
+
+
+def _task_queue_worker(_job: dict[str, Any]) -> dict[str, Any]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT task_id, user_id, agent_id, type, title, status, priority, assigned_to, error_message, created_at, updated_at
+            FROM tasks
+            WHERE status='queued'
+            ORDER BY created_at ASC, id ASC
+            LIMIT 5
+            """
+        ).fetchall()
+
+    processed = 0
+    completed = 0
+    failed = 0
+    output_ids: list[str] = []
+
+    for row in rows:
+        task = dict(row)
+        task_id = task["task_id"]
+        processed += 1
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE tasks SET status='running', error_message=NULL, updated_at=datetime('now') WHERE task_id=? AND status='queued'",
+                (task_id,),
+            )
+            conn.execute(
+                "INSERT INTO task_logs(task_id, level, message, created_at) VALUES (?, 'info', 'Task picked up by scheduler', datetime('now'))",
+                (task_id,),
+            )
+            conn.commit()
+        try:
+            content = _execute_user_task(task)
+            output_id = f"out_{uuid.uuid4().hex[:10]}"
+            title = f"Output for {task.get('title') or task_id}"
+            size_bytes = len(content.encode("utf-8"))
+            with get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO outputs(output_id, task_id, user_id, title, output_type, content, text, file_url, size_bytes, download_url, created_at)
+                    VALUES(?, ?, ?, ?, 'text', ?, ?, NULL, ?, '', datetime('now'))
+                    """,
+                    (output_id, task_id, task.get("user_id"), title, content, content, size_bytes),
+                )
+                conn.execute(
+                    "UPDATE tasks SET status='completed', error_message=NULL, updated_at=datetime('now') WHERE task_id=?",
+                    (task_id,),
+                )
+                conn.execute(
+                    "INSERT INTO task_logs(task_id, level, message, created_at) VALUES (?, 'info', ?, datetime('now'))",
+                    (task_id, f"Task completed; output created: {output_id}"),
+                )
+                conn.commit()
+            completed += 1
+            output_ids.append(output_id)
+        except Exception as exc:  # noqa: BLE001 - per-task failures should not crash the queue worker
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE tasks SET status='failed', error_message=?, updated_at=datetime('now') WHERE task_id=?",
+                    (str(exc), task_id),
+                )
+                conn.execute(
+                    "INSERT INTO task_logs(task_id, level, message, created_at) VALUES (?, 'error', ?, datetime('now'))",
+                    (task_id, f"Task failed: {exc}"),
+                )
+                conn.commit()
+            failed += 1
+
+    return {
+        "status": "success",
+        "summary": f"Task queue worker processed={processed}, completed={completed}, failed={failed}",
+        "metadata": {"processed": processed, "completed": completed, "failed": failed, "output_ids": output_ids},
+    }
+
+
 def _send_telegram_notification(message: str) -> dict[str, Any]:
     config = load_runtime_config()
     if not config.get("telegram_notifications_enabled"):
@@ -285,6 +376,7 @@ JOB_HANDLERS = {
     "integration_drift_check": _integration_drift_check,
     "git_status_summary": _git_status_summary,
     "todo_fixme_scan": _todo_fixme_scan,
+    "task_queue_worker": _task_queue_worker,
     "telegram_status_summary": _telegram_status_summary,
     "roadmap_review": _roadmap_review,
 }

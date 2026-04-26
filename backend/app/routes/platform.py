@@ -5,7 +5,7 @@ import json
 import secrets
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, BackgroundTasks, Header
 from pydantic import BaseModel
 
 from backend.app.db.session import get_connection
@@ -55,6 +55,7 @@ from backend.app.schemas.platform import (
 )
 from backend.app.services.auth_service import require_user_access, resolve_session, update_profile
 from backend.app.services.error_response import fail
+from backend.app.services.job_runner import run_job_once
 
 router = APIRouter()
 
@@ -66,6 +67,15 @@ def _require_user_id(authorization: str | None) -> str:
 
 def _row_dict(row):
     return dict(row) if row is not None else None
+
+
+def _trigger_task_queue_worker():
+    try:
+        run_job_once("default-task-queue-worker")
+    except Exception:
+        # Task creation must remain durable even if the asynchronous worker cannot run immediately.
+        # The scheduled job can retry queued tasks on the next runtime/admin scheduler tick.
+        return None
 
 
 @router.get("/dashboard/overview", response_model=DashboardOverviewResponse)
@@ -253,33 +263,48 @@ def list_workflows():
 
 
 @router.get("/tasks", response_model=TaskListResponse)
-def list_tasks(status: str | None = None):
+def list_tasks(status: str | None = None, user_id: str | None = None):
     query = """
-        SELECT task_id, title, status, priority, assigned_to, updated_at
+        SELECT task_id, user_id, agent_id, type, title, status, priority, assigned_to, error_message, created_at, updated_at
         FROM tasks
     """
-    params: tuple = ()
+    clauses: list[str] = []
+    params: list[str] = []
     if status:
-        query += " WHERE status=?"
-        params = (status,)
+        clauses.append("status=?")
+        params.append(status)
+    if user_id:
+        clauses.append("user_id=?")
+        params.append(user_id)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
     query += " ORDER BY updated_at DESC"
 
     with get_connection() as conn:
-        rows = conn.execute(query, params).fetchall()
+        rows = conn.execute(query, tuple(params)).fetchall()
 
     return {"status": "ok", "tasks": [TaskRecord(**_row_dict(r)) for r in rows]}
 
 
 @router.get("/outputs", response_model=OutputListResponse)
-def list_outputs():
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT output_id, title, output_type, size_bytes, download_url, created_at
+def list_outputs(task_id: str | None = None, user_id: str | None = None):
+    query = """
+            SELECT output_id, task_id, user_id, title, output_type, content, text, file_url, size_bytes, download_url, created_at
             FROM outputs
-            ORDER BY created_at DESC
-            """
-        ).fetchall()
+    """
+    clauses: list[str] = []
+    params: list[str] = []
+    if task_id:
+        clauses.append("task_id=?")
+        params.append(task_id)
+    if user_id:
+        clauses.append("user_id=?")
+        params.append(user_id)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY created_at DESC"
+    with get_connection() as conn:
+        rows = conn.execute(query, tuple(params)).fetchall()
 
     return {"status": "ok", "outputs": [OutputRecord(**_row_dict(r)) for r in rows]}
 
@@ -869,21 +894,23 @@ def list_workflow_runs(workflow_id: str):
 
 class TaskCreateInput(BaseModel):
     title: str
+    type: str = "general"
+    agent_id: str | None = None
     priority: str = "medium"
     assigned_to: str | None = None
 
 
 @router.post("/tasks")
-def create_task(payload: TaskCreateInput, authorization: str | None = Header(default=None)):
+def create_task(payload: TaskCreateInput, background_tasks: BackgroundTasks, authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)
     task_id = f"tsk_{secrets.token_hex(5)}"
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO tasks(task_id, title, status, priority, assigned_to, updated_at)
-            VALUES (?, ?, 'queued', ?, ?, datetime('now'))
+            INSERT INTO tasks(task_id, user_id, agent_id, type, title, status, priority, assigned_to, error_message, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, NULL, datetime('now'), datetime('now'))
             """,
-            (task_id, payload.title, payload.priority, payload.assigned_to),
+            (task_id, actor, payload.agent_id or payload.assigned_to, payload.type, payload.title, payload.priority, payload.assigned_to),
         )
         conn.execute(
             "INSERT INTO task_logs(task_id, level, message, created_at) VALUES (?, 'info', ?, datetime('now'))",
@@ -891,6 +918,7 @@ def create_task(payload: TaskCreateInput, authorization: str | None = Header(def
         )
         conn.commit()
     _audit(actor, "task.create", "task", task_id, {"priority": payload.priority})
+    background_tasks.add_task(_trigger_task_queue_worker)
     return {"status": "ok", "task_id": task_id}
 
 
@@ -898,7 +926,7 @@ def create_task(payload: TaskCreateInput, authorization: str | None = Header(def
 def get_task(task_id: str):
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT task_id, title, status, priority, assigned_to, updated_at FROM tasks WHERE task_id=?",
+            "SELECT task_id, user_id, agent_id, type, title, status, priority, assigned_to, error_message, created_at, updated_at FROM tasks WHERE task_id=?",
             (task_id,),
         ).fetchone()
     if not row:
@@ -911,7 +939,7 @@ def _set_task_status(task_id: str, new_status: str, actor: str, message: str):
         exists = conn.execute("SELECT 1 FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         if not exists:
             fail(404, "not_found", "Task not found")
-        conn.execute("UPDATE tasks SET status=?, updated_at=datetime('now') WHERE task_id=?", (new_status, task_id))
+        conn.execute("UPDATE tasks SET status=?, error_message=NULL, updated_at=datetime('now') WHERE task_id=?", (new_status, task_id))
         conn.execute(
             "INSERT INTO task_logs(task_id, level, message, created_at) VALUES (?, 'info', ?, datetime('now'))",
             (task_id, message),
@@ -948,7 +976,7 @@ def get_task_logs(task_id: str):
 def get_output(output_id: str):
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT output_id, title, output_type, size_bytes, download_url, created_at FROM outputs WHERE output_id=?",
+            "SELECT output_id, task_id, user_id, title, output_type, content, text, file_url, size_bytes, download_url, created_at FROM outputs WHERE output_id=?",
             (output_id,),
         ).fetchone()
     if not row:

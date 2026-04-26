@@ -113,10 +113,15 @@ class WorkflowListResponse(BaseModel):
 
 class TaskRecord(BaseModel):
     task_id: str
+    user_id: str | None = None
+    agent_id: str | None = None
+    type: str = "general"
     title: str
     status: Literal["queued", "running", "completed", "failed"]
     priority: Literal["low", "medium", "high"]
     assigned_to: str | None = None
+    error_message: str | None = None
+    created_at: str
     updated_at: str
 
 
@@ -127,8 +132,13 @@ class TaskListResponse(BaseModel):
 
 class OutputRecord(BaseModel):
     output_id: str
+    task_id: str | None = None
+    user_id: str | None = None
     title: str
     output_type: str
+    content: str | None = None
+    text: str | None = None
+    file_url: str | None = None
     size_bytes: int
     download_url: str
     created_at: str

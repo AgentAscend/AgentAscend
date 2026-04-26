@@ -159,6 +159,16 @@ def _seed_default_scheduled_jobs(conn: sqlite3.Connection) -> None:
             "model_tier": "cheap",
         },
         {
+            "id": "default-task-queue-worker",
+            "name": "Task queue worker",
+            "description": "Process queued user tasks and persist outputs from completed work.",
+            "job_type": "task_queue_worker",
+            "schedule_type": "interval",
+            "interval_seconds": 60,
+            "priority": 70,
+            "model_tier": "cheap",
+        },
+        {
             "id": "default-telegram-status-summary",
             "name": "Telegram status summary",
             "description": "Daily status summary with optional Telegram notification if configured.",
@@ -466,12 +476,35 @@ def init_db():
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 task_id TEXT UNIQUE NOT NULL,
+                user_id TEXT,
+                agent_id TEXT,
+                type TEXT NOT NULL DEFAULT 'general',
                 title TEXT NOT NULL,
                 status TEXT NOT NULL,
-                priority TEXT NOT NULL,
+                priority TEXT NOT NULL DEFAULT 'medium',
                 assigned_to TEXT,
+                error_message TEXT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL
             )
+            """
+        )
+        task_columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+        if "user_id" not in task_columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN user_id TEXT")
+        if "agent_id" not in task_columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN agent_id TEXT")
+        if "type" not in task_columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'general'")
+        if "error_message" not in task_columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN error_message TEXT")
+        if "created_at" not in task_columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN created_at DATETIME")
+        conn.execute(
+            """
+            UPDATE tasks
+            SET created_at = COALESCE(created_at, updated_at, CURRENT_TIMESTAMP)
+            WHERE created_at IS NULL
             """
         )
 
@@ -480,14 +513,32 @@ def init_db():
             CREATE TABLE IF NOT EXISTS outputs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 output_id TEXT UNIQUE NOT NULL,
+                task_id TEXT,
+                user_id TEXT,
                 title TEXT NOT NULL,
                 output_type TEXT NOT NULL,
-                size_bytes INTEGER NOT NULL,
-                download_url TEXT NOT NULL,
+                content TEXT,
+                text TEXT,
+                file_url TEXT,
+                size_bytes INTEGER NOT NULL DEFAULT 0,
+                download_url TEXT NOT NULL DEFAULT '',
                 created_at DATETIME NOT NULL
             )
             """
         )
+        output_columns = {row[1] for row in conn.execute("PRAGMA table_info(outputs)").fetchall()}
+        if "task_id" not in output_columns:
+            conn.execute("ALTER TABLE outputs ADD COLUMN task_id TEXT")
+        if "user_id" not in output_columns:
+            conn.execute("ALTER TABLE outputs ADD COLUMN user_id TEXT")
+        if "content" not in output_columns:
+            conn.execute("ALTER TABLE outputs ADD COLUMN content TEXT")
+        if "text" not in output_columns:
+            conn.execute("ALTER TABLE outputs ADD COLUMN text TEXT")
+        if "file_url" not in output_columns:
+            conn.execute("ALTER TABLE outputs ADD COLUMN file_url TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_outputs_task_user ON outputs(task_id, user_id)")
 
         conn.execute(
             """
