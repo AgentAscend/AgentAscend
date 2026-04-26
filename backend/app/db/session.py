@@ -727,4 +727,19 @@ def init_db():
         # user-created backend data exists. Scheduler default jobs are seeded above
         # by _seed_default_scheduled_jobs because they are real system jobs, not UI
         # demo data.
+        # Remove legacy demo rows from deployments that already ran the old seed
+        # block; delete by exact known fixture IDs only so real user-created data
+        # is not affected.
+        conn.execute("DELETE FROM agents WHERE agent_id IN ('agt_research_alpha', 'agt_builder_bot', 'agt_social_sentinel', 'agt_strat_mind')")
+        conn.execute("DELETE FROM deployments WHERE deployment_id IN ('dep_prod', 'dep_stage', 'dep_dev')")
+        conn.execute("DELETE FROM workflows WHERE workflow_id IN ('wf_market_scan', 'wf_deploy_check', 'wf_content_loop')")
+        conn.execute("DELETE FROM workflow_runs WHERE run_id IN ('run_001', 'run_002', 'run_003')")
+        conn.execute("DELETE FROM tasks WHERE task_id IN ('tsk_001', 'tsk_002', 'tsk_003')")
+        conn.execute("DELETE FROM outputs WHERE output_id IN ('out_001', 'out_002')")
+        conn.execute("DELETE FROM community_posts WHERE post_id IN ('post_001', 'post_002')")
+        conn.execute("DELETE FROM activity_log WHERE source='system' AND action='Initial platform dataset seeded'")
+        conn.execute("DELETE FROM activity_log WHERE source='deployment' AND action='Production cluster health check passed'")
+        conn.execute("DELETE FROM deployment_metrics WHERE deployment_id IN ('dep_prod', 'dep_stage')")
+        conn.execute("DELETE FROM ops_alerts WHERE alert_id IN ('alert_001', 'alert_002')")
+        conn.execute("DELETE FROM observability_metrics WHERE metric_name IN ('api_requests_per_min', 'api_error_rate') AND labels_json = '{\"service\":\"api\"}'")
         conn.commit()
