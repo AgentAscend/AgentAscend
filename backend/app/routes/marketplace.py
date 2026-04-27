@@ -2,6 +2,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Header
 
@@ -34,6 +35,29 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _as_iso_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
+def _safe_tags(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed]
+    return []
+
+
 def _listing_from_row(row) -> ListingRecord:
     return ListingRecord(
         listing_id=row["listing_id"],
@@ -42,13 +66,13 @@ def _listing_from_row(row) -> ListingRecord:
         description=row["description"],
         category=row["category"],
         pricing_model=row["pricing_model"],
-        price_amount=float(row["price_amount"]),
+        price_amount=float(row["price_amount"] or 0),
         price_token=row["price_token"],
         status=row["status"],
-        tags=json.loads(row["tags_json"] or "[]"),
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-        published_at=row["published_at"],
+        tags=_safe_tags(row["tags_json"]),
+        created_at=_as_iso_string(row["created_at"]) or "",
+        updated_at=_as_iso_string(row["updated_at"]) or "",
+        published_at=_as_iso_string(row["published_at"]),
     )
 
 

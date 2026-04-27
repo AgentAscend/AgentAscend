@@ -194,11 +194,27 @@ def _integration_drift_check(_job: dict[str, Any]) -> dict[str, Any]:
 
 
 def _git_status_summary(_job: dict[str, Any]) -> dict[str, Any]:
+    command_used = "default"
     code, output = _run_readonly_command(["git", "status", "--short"], timeout=15)
     branch_code, branch = _run_readonly_command(["git", "branch", "--show-current"], timeout=15)
+
+    if code != 0 or branch_code != 0:
+        # Some environments run scheduler jobs under a different OS user than the
+        # repo owner, which triggers Git's dubious ownership guard. Use a
+        # per-command safe.directory override so this read-only monitoring job can
+        # still run without mutating global git config.
+        command_used = "safe_directory_override"
+        safe_dir = str(PROJECT_ROOT)
+        code, output = _run_readonly_command(["git", "-c", f"safe.directory={safe_dir}", "status", "--short"], timeout=15)
+        branch_code, branch = _run_readonly_command(["git", "-c", f"safe.directory={safe_dir}", "branch", "--show-current"], timeout=15)
+
     changed = [line for line in output.splitlines() if line.strip()]
     status = "success" if code == 0 and branch_code == 0 else "failed"
-    return {"status": status, "summary": f"Git branch={branch.strip() or 'unknown'}; changed files={len(changed)}", "metadata": {"changed": changed[:100]}}
+    return {
+        "status": status,
+        "summary": f"Git branch={branch.strip() or 'unknown'}; changed files={len(changed)}",
+        "metadata": {"changed": changed[:100], "command_used": command_used},
+    }
 
 
 def _todo_fixme_scan(_job: dict[str, Any]) -> dict[str, Any]:
