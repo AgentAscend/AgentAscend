@@ -121,6 +121,8 @@ class ExecutionRecord(BaseModel):
     started_at: str | None = None
     finished_at: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    event_count: int = 0
+    artifact_count: int = 0
 
 
 class ExecutionEventRecord(BaseModel):
@@ -188,6 +190,21 @@ class ExecutionApprovalRecord(BaseModel):
 class ExecutionListResponse(BaseModel):
     status: Literal["ok"] = "ok"
     executions: list[ExecutionRecord]
+    limit: int = 50
+    offset: int = 0
+    total: int | None = None
+
+
+class ExecutionSummaryResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    scope: Literal["user"] = "user"
+    total_executions: int = 0
+    counts_by_status: dict[str, int] = Field(default_factory=dict)
+    recent_event_count: int = 0
+    recent_artifact_count: int = 0
+    recent_failures: int = 0
+    latest_execution_timestamp: str | None = None
+    health_flags: dict[str, int] = Field(default_factory=dict)
 
 
 class ExecutionDetailResponse(BaseModel):

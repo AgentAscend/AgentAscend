@@ -146,13 +146,66 @@ def get_execution_by_source(source_type: str, source_id: str, db: Any | None = N
     return _row_to_record(row) if row is not None else None
 
 
-def list_executions_for_user(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+def _execution_filter_clause(
+    user_id: str,
+    status: str | None = None,
+    source_type: str | None = None,
+    source_id: str | None = None,
+    agent_id: str | None = None,
+) -> tuple[str, list[Any]]:
+    clauses = ["e.user_id = ?"]
+    params: list[Any] = [user_id]
+    if status:
+        clauses.append("e.status = ?")
+        params.append(status)
+    if source_type:
+        clauses.append("e.source_type = ?")
+        params.append(source_type)
+    if source_id:
+        clauses.append("e.source_id = ?")
+        params.append(source_id)
+    if agent_id:
+        clauses.append("e.agent_id = ?")
+        params.append(agent_id)
+    return " AND ".join(clauses), params
+
+
+def list_executions_for_user(
+    user_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+    source_type: str | None = None,
+    source_id: str | None = None,
+    agent_id: str | None = None,
+) -> list[dict[str, Any]]:
+    where_clause, params = _execution_filter_clause(user_id, status, source_type, source_id, agent_id)
+    query = """
+            SELECT e.*,
+                   (SELECT COUNT(*) FROM execution_events ev WHERE ev.execution_id = e.execution_id) AS event_count,
+                   (SELECT COUNT(*) FROM execution_artifacts art WHERE art.execution_id = e.execution_id) AS artifact_count
+            FROM executions e
+            WHERE {where_clause}
+            ORDER BY e.started_at DESC, e.id DESC
+            LIMIT ? OFFSET ?
+            """.format(where_clause=where_clause)
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM executions WHERE user_id = ? ORDER BY started_at DESC, id DESC LIMIT ?",
-            (user_id, limit),
-        ).fetchall()
+        rows = conn.execute(query, tuple(params + [limit, offset])).fetchall()
     return [_row_to_record(row) for row in rows]
+
+
+def count_executions_for_user(
+    user_id: str,
+    status: str | None = None,
+    source_type: str | None = None,
+    source_id: str | None = None,
+    agent_id: str | None = None,
+) -> int:
+    where_clause, params = _execution_filter_clause(user_id, status, source_type, source_id, agent_id)
+    query = "SELECT COUNT(*) AS count FROM executions e WHERE {where_clause}".format(where_clause=where_clause)
+    with get_connection() as conn:
+        row = conn.execute(query, tuple(params)).fetchone()
+    return int(row["count"] if row is not None else 0)
 
 
 def _execution_status_from_task_status(task_status: str | None) -> str:

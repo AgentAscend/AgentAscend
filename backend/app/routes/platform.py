@@ -5,7 +5,7 @@ import json
 import secrets
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Header
+from fastapi import APIRouter, BackgroundTasks, Header, Query
 from pydantic import BaseModel
 
 from backend.app.db.session import get_connection
@@ -32,6 +32,7 @@ from backend.app.schemas.platform import (
     ExecutionDetailResponse,
     ExecutionListResponse,
     ExecutionRecord,
+    ExecutionSummaryResponse,
     InstallListingRequest,
     InstallListingResponse,
     LeaderboardEntry,
@@ -377,6 +378,8 @@ def _execution_record_payload(execution: dict) -> ExecutionRecord:
         started_at=execution.get("started_at"),
         finished_at=execution.get("finished_at"),
         metadata=_safe_json_dict(execution.get("metadata")),
+        event_count=int(execution.get("event_count") or 0),
+        artifact_count=int(execution.get("artifact_count") or 0),
     )
 
 
@@ -454,9 +457,12 @@ def _execution_detail_payload(execution: dict) -> dict:
         }
         for approval in execution_ledger.list_execution_approvals(execution_id)
     ]
+    execution_with_counts = dict(execution)
+    execution_with_counts["event_count"] = len(events)
+    execution_with_counts["artifact_count"] = len(artifacts)
     return {
         "status": "ok",
-        "execution": _execution_record_payload(execution),
+        "execution": _execution_record_payload(execution_with_counts),
         "steps": steps,
         "events": events,
         "artifacts": artifacts,
@@ -470,12 +476,97 @@ def _require_execution_owner(execution: dict, actor: dict) -> None:
         fail(403, "forbidden", "Authenticated user cannot access another user's execution")
 
 
+def _execution_summary_for_user(user_id: str) -> dict:
+    with get_connection() as conn:
+        status_rows = conn.execute(
+            """
+            SELECT status, COUNT(*) AS count
+            FROM executions
+            WHERE user_id=?
+            GROUP BY status
+            """,
+            (user_id,),
+        ).fetchall()
+        latest = conn.execute(
+            "SELECT started_at FROM executions WHERE user_id=? ORDER BY started_at DESC, id DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        totals = conn.execute(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM executions WHERE user_id=?) AS total_executions,
+              (SELECT COUNT(*) FROM executions WHERE user_id=? AND status='failed') AS recent_failures,
+              (SELECT COUNT(*) FROM execution_events ev JOIN executions e ON e.execution_id=ev.execution_id WHERE e.user_id=?) AS recent_event_count,
+              (SELECT COUNT(*) FROM execution_artifacts art JOIN executions e ON e.execution_id=art.execution_id WHERE e.user_id=?) AS recent_artifact_count,
+              (SELECT COUNT(*) FROM execution_events ev JOIN executions e ON e.execution_id=ev.execution_id WHERE e.user_id=? AND ev.payload_json IS NULL) AS malformed_event_json,
+              (SELECT COUNT(*) FROM execution_artifacts art JOIN executions e ON e.execution_id=art.execution_id WHERE e.user_id=? AND art.metadata_json IS NULL) AS malformed_artifact_json
+            """,
+            (user_id, user_id, user_id, user_id, user_id, user_id),
+        ).fetchone()
+    counts_by_status = {row["status"]: int(row["count"]) for row in status_rows}
+    return {
+        "status": "ok",
+        "scope": "user",
+        "total_executions": int(totals["total_executions"] or 0),
+        "counts_by_status": counts_by_status,
+        "recent_event_count": int(totals["recent_event_count"] or 0),
+        "recent_artifact_count": int(totals["recent_artifact_count"] or 0),
+        "recent_failures": int(totals["recent_failures"] or 0),
+        "latest_execution_timestamp": latest["started_at"] if latest else None,
+        "health_flags": {
+            "missing_executions": 0,
+            "orphan_events": 0,
+            "orphan_artifacts": 0,
+            "malformed_json": int((totals["malformed_event_json"] or 0) + (totals["malformed_artifact_json"] or 0)),
+            "sensitive_match": 0,
+        },
+    }
+
+
 @router.get("/executions/me", response_model=ExecutionListResponse)
-def list_my_executions(authorization: str | None = Header(default=None)):
+def list_my_executions(
+    authorization: str | None = Header(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    status: str | None = None,
+    source_type: str | None = None,
+    source_id: str | None = None,
+    task_id: str | None = None,
+    agent_id: str | None = None,
+):
     auth = resolve_session(authorization)
     user_id = auth["user"]["user_id"]
-    executions = execution_ledger.list_executions_for_user(user_id)
-    return {"status": "ok", "executions": [_execution_record_payload(execution) for execution in executions]}
+    effective_source_id = task_id or source_id
+    effective_source_type = "task" if task_id else source_type
+    executions = execution_ledger.list_executions_for_user(
+        user_id,
+        limit=limit,
+        offset=offset,
+        status=status,
+        source_type=effective_source_type,
+        source_id=effective_source_id,
+        agent_id=agent_id,
+    )
+    total = execution_ledger.count_executions_for_user(
+        user_id,
+        status=status,
+        source_type=effective_source_type,
+        source_id=effective_source_id,
+        agent_id=agent_id,
+    )
+    return {
+        "status": "ok",
+        "executions": [_execution_record_payload(execution) for execution in executions],
+        "limit": limit,
+        "offset": offset,
+        "total": total,
+    }
+
+
+@router.get("/executions/summary", response_model=ExecutionSummaryResponse)
+def execution_summary(authorization: str | None = Header(default=None)):
+    auth = resolve_session(authorization)
+    return _execution_summary_for_user(auth["user"]["user_id"])
 
 
 @router.get("/executions/{execution_id}", response_model=ExecutionDetailResponse)

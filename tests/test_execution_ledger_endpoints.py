@@ -169,3 +169,126 @@ def test_execution_response_does_not_expose_secret_fields(client: TestClient, mo
     assert "database_url" not in response_text
     assert "postgres_url" not in response_text
     assert "private_key" not in response_text
+
+
+def test_execution_list_supports_pagination_filters_and_safe_summaries(client: TestClient):
+    from backend.app.services import execution_ledger
+
+    user_id, token = _signup(client, "execution-list-filters@example.com")
+    other_user_id, _other_token = _signup(client, "execution-list-filters-other@example.com")
+
+    first = execution_ledger.create_execution(
+        user_id=user_id,
+        source_type="task",
+        source_id="tsk_filter_first",
+        agent_id="agt_filter_a",
+        status="completed",
+        metadata={"purpose": "first"},
+    )
+    second = execution_ledger.create_execution(
+        user_id=user_id,
+        source_type="task",
+        source_id="tsk_filter_second",
+        agent_id="agt_filter_b",
+        status="failed",
+        metadata={"purpose": "second"},
+    )
+    execution_ledger.append_execution_event(second["execution_id"], "execution_failed", payload={"safe": True})
+    execution_ledger.attach_execution_artifact(
+        second["execution_id"],
+        artifact_type="output",
+        name="Safe output reference",
+        uri="output://out_filter_second",
+        content_text="raw output body should not be exposed in summaries",
+        metadata={"task_id": "tsk_filter_second", "output_id": "out_filter_second"},
+    )
+    execution_ledger.create_execution(
+        user_id=other_user_id,
+        source_type="task",
+        source_id="tsk_filter_other",
+        agent_id="agt_filter_b",
+        status="failed",
+    )
+
+    filtered = client.get(
+        "/executions/me?status=failed&source_type=task&agent_id=agt_filter_b&limit=1&offset=0",
+        headers=_auth_header(token),
+    )
+    assert filtered.status_code == 200, filtered.text
+    body = filtered.json()
+    assert body["status"] == "ok"
+    assert body["limit"] == 1
+    assert body["offset"] == 0
+    assert body["total"] == 1
+    assert [execution["execution_id"] for execution in body["executions"]] == [second["execution_id"]]
+    assert body["executions"][0]["event_count"] == 1
+    assert body["executions"][0]["artifact_count"] == 1
+    assert "content_text" not in str(body).lower()
+    assert "raw output body" not in str(body).lower()
+
+    page_two = client.get("/executions/me?limit=1&offset=1", headers=_auth_header(token))
+    assert page_two.status_code == 200, page_two.text
+    assert page_two.json()["total"] == 2
+    assert len(page_two.json()["executions"]) == 1
+    assert page_two.json()["executions"][0]["execution_id"] == first["execution_id"]
+
+    by_task = client.get("/executions/me?task_id=tsk_filter_second", headers=_auth_header(token))
+    assert by_task.status_code == 200, by_task.text
+    assert [execution["execution_id"] for execution in by_task.json()["executions"]] == [second["execution_id"]]
+
+
+def test_execution_list_rejects_invalid_limit(client: TestClient):
+    _user_id, token = _signup(client, "execution-list-invalid-limit@example.com")
+
+    too_large = client.get("/executions/me?limit=101", headers=_auth_header(token))
+    assert too_large.status_code == 422
+
+    zero = client.get("/executions/me?limit=0", headers=_auth_header(token))
+    assert zero.status_code == 422
+
+
+def test_execution_summary_is_authenticated_user_scoped_and_safe(client: TestClient):
+    from backend.app.services import execution_ledger
+
+    user_id, token = _signup(client, "execution-summary-owner@example.com")
+    other_user_id, other_token = _signup(client, "execution-summary-other@example.com")
+
+    completed = execution_ledger.create_execution(user_id=user_id, source_type="task", source_id="tsk_summary_done", status="completed")
+    failed = execution_ledger.create_execution(user_id=user_id, source_type="task", source_id="tsk_summary_failed", status="failed")
+    execution_ledger.append_execution_event(completed["execution_id"], "execution_completed", payload={"safe": True})
+    execution_ledger.append_execution_event(failed["execution_id"], "execution_failed", payload={"safe": True})
+    execution_ledger.attach_execution_artifact(
+        failed["execution_id"],
+        artifact_type="output",
+        name="Failure output reference",
+        uri="output://out_summary_failed",
+        content_text="raw failure output must stay hidden",
+        metadata={"output_id": "out_summary_failed"},
+    )
+    execution_ledger.create_execution(user_id=other_user_id, source_type="task", source_id="tsk_summary_other", status="running")
+
+    unauthenticated = client.get("/executions/summary")
+    assert unauthenticated.status_code == 401
+
+    response = client.get("/executions/summary", headers=_auth_header(token))
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["scope"] == "user"
+    assert body["total_executions"] == 2
+    assert body["counts_by_status"] == {"completed": 1, "failed": 1}
+    assert body["recent_event_count"] == 2
+    assert body["recent_artifact_count"] == 1
+    assert body["recent_failures"] == 1
+    assert body["latest_execution_timestamp"] is not None
+    assert body["health_flags"]["orphan_events"] == 0
+    assert body["health_flags"]["orphan_artifacts"] == 0
+    assert body["health_flags"]["malformed_json"] == 0
+    assert body["health_flags"]["sensitive_match"] == 0
+    assert "raw failure output" not in response.text.lower()
+    assert "content_text" not in response.text.lower()
+
+    other_response = client.get("/executions/summary", headers=_auth_header(other_token))
+    assert other_response.status_code == 200, other_response.text
+    assert other_response.json()["total_executions"] == 1
+    assert other_response.json()["counts_by_status"] == {"running": 1}
