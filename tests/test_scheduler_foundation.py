@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from backend.app.db import session
@@ -64,6 +65,188 @@ def test_run_job_once_records_successful_run(tmp_path):
             assert run["output_summary"] is not None
     finally:
         session.DB_PATH = original_db_path
+
+
+def test_scheduler_execution_ledger_stays_off_without_narrow_flag(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+    monkeypatch.delenv("SCHEDULER_EXECUTION_LEDGER_ENABLED", raising=False)
+    db_path = tmp_path / "agentascend-scheduler-ledger-off.db"
+    original_db_path = session.DB_PATH
+    session.DB_PATH = db_path
+    try:
+        session.init_db()
+        from backend.app.services.job_runner import run_job_once
+
+        with session.get_connection() as conn:
+            job = conn.execute("SELECT * FROM scheduled_jobs WHERE job_type = ?", ("git_status_summary",)).fetchone()
+            assert job is not None
+
+        result = run_job_once(job["id"])
+        assert result["status"] == "success"
+
+        with session.get_connection() as conn:
+            run_count = conn.execute("SELECT COUNT(*) FROM job_runs WHERE id = ?", (result["run_id"],)).fetchone()[0]
+            scheduler_execution_count = conn.execute(
+                "SELECT COUNT(*) FROM executions WHERE source_type='scheduled_job_run' AND source_id=?",
+                (result["run_id"],),
+            ).fetchone()[0]
+        assert run_count == 1
+        assert scheduler_execution_count == 0
+    finally:
+        session.DB_PATH = original_db_path
+
+
+def test_scheduler_execution_ledger_records_safe_system_run_when_enabled(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+    monkeypatch.setenv("SCHEDULER_EXECUTION_LEDGER_ENABLED", "true")
+    db_path = tmp_path / "agentascend-scheduler-ledger-on.db"
+    original_db_path = session.DB_PATH
+    session.DB_PATH = db_path
+    try:
+        session.init_db()
+        from backend.app.services.job_runner import run_job_once
+
+        with session.get_connection() as conn:
+            job = conn.execute("SELECT * FROM scheduled_jobs WHERE job_type = ?", ("git_status_summary",)).fetchone()
+            assert job is not None
+
+        result = run_job_once(job["id"])
+        assert result["status"] == "success"
+
+        with session.get_connection() as conn:
+            execution = conn.execute(
+                "SELECT * FROM executions WHERE source_type='scheduled_job_run' AND source_id=?",
+                (result["run_id"],),
+            ).fetchone()
+            assert execution is not None
+            events = conn.execute(
+                "SELECT event_type, payload_json FROM execution_events WHERE execution_id=? ORDER BY id ASC",
+                (execution["execution_id"],),
+            ).fetchall()
+
+        assert execution["user_id"] is None
+        assert execution["agent_id"] is None
+        assert execution["status"] == "completed"
+        metadata = json.loads(execution["metadata_json"])
+        assert metadata["run_id"] == result["run_id"]
+        assert metadata["scheduled_job_id"] == job["id"]
+        assert metadata["job_type"] == "git_status_summary"
+        assert metadata["final_status"] == "success"
+        assert metadata["has_error"] is False
+        assert isinstance(metadata["output_summary_length"], int)
+        metadata_text = json.dumps(metadata).lower()
+        assert "git branch=" not in metadata_text
+        for word in "error_message token password secret database_url raw_request raw_response authorization prompt raw_tool_output".split():
+            assert word not in metadata_text
+        assert [event["event_type"] for event in events] == ["scheduler_job_started", "scheduler_job_completed"]
+    finally:
+        session.DB_PATH = original_db_path
+
+
+def test_scheduler_execution_ledger_failed_run_event_is_safe(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+    monkeypatch.setenv("SCHEDULER_EXECUTION_LEDGER_ENABLED", "true")
+    db_path = tmp_path / "agentascend-scheduler-ledger-failed.db"
+    original_db_path = session.DB_PATH
+    session.DB_PATH = db_path
+    try:
+        session.init_db()
+        from backend.app.services import job_runner
+
+        def fake_urlopen(*_args, **_kwargs):
+            raise TimeoutError("health timed out with raw secret text")
+
+        monkeypatch.setattr(job_runner, "urlopen", fake_urlopen)
+        monkeypatch.setattr(job_runner, "_send_telegram_notification", lambda _message: {"enabled": True, "sent": True})
+
+        with session.get_connection() as conn:
+            job = conn.execute("SELECT * FROM scheduled_jobs WHERE job_type = ?", ("backend_health_check",)).fetchone()
+            assert job is not None
+
+        result = job_runner.run_job_once(job["id"])
+        assert result["status"] == "failed"
+
+        with session.get_connection() as conn:
+            execution = conn.execute(
+                "SELECT * FROM executions WHERE source_type='scheduled_job_run' AND source_id=?",
+                (result["run_id"],),
+            ).fetchone()
+            assert execution is not None
+            failed_event = conn.execute(
+                "SELECT payload_json FROM execution_events WHERE execution_id=? AND event_type='scheduler_job_failed'",
+                (execution["execution_id"],),
+            ).fetchone()
+
+        assert execution["status"] == "failed"
+        payload = json.loads(failed_event["payload_json"])
+        assert payload["run_id"] == result["run_id"]
+        assert payload["final_status"] == "failed"
+        assert payload["has_error"] is True
+        payload_text = json.dumps(payload).lower()
+        assert "health timed out" not in payload_text
+        assert "raw secret text" not in payload_text
+        assert "error_message" not in payload_text
+    finally:
+        session.DB_PATH = original_db_path
+
+
+def test_scheduler_ledger_metadata_builder_rejects_sensitive_result_keys():
+    from backend.app.services import job_runner
+
+    job = {
+        "id": "job_sensitive",
+        "job_type": "git_status_summary",
+        "schedule_type": "interval",
+        "model_tier": "cheap",
+        "priority": 10,
+        "created_by": "system",
+    }
+    result = {
+        "status": "success",
+        "summary": "safe summary body must not be stored",
+        "error": "raw error must not be stored",
+        "metadata": {
+            "token": "should-not-pass-through",
+            "authorization": "Bearer should-not-pass-through",
+            "api_key": "should-not-pass-through",
+            "secret": "should-not-pass-through",
+            "password": "should-not-pass-through",
+            "database_url": "should-not-pass-through",
+            "private_key": "should-not-pass-through",
+            "raw_request": "should-not-pass-through",
+            "raw_response": "should-not-pass-through",
+            "request_body": "should-not-pass-through",
+            "response_body": "should-not-pass-through",
+        },
+    }
+
+    metadata = job_runner._build_scheduler_ledger_metadata(
+        job,
+        "run_sensitive",
+        "2026-01-01T00:00:00+00:00",
+        finished_at="2026-01-01T00:00:01+00:00",
+        result=result,
+    )
+
+    metadata_text = json.dumps(metadata).lower()
+    assert metadata["output_summary_length"] == len(result["summary"])
+    assert metadata["has_error"] is True
+    for word in [
+        "token",
+        "authorization",
+        "api_key",
+        "secret",
+        "password",
+        "database_url",
+        "private_key",
+        "raw_request",
+        "raw_response",
+        "request_body",
+        "response_body",
+        "safe summary body",
+        "raw error",
+    ]:
+        assert word not in metadata_text
 
 
 def test_spawned_jobs_are_disabled_by_default_and_deduplicated(tmp_path):

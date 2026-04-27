@@ -292,3 +292,32 @@ def test_execution_summary_is_authenticated_user_scoped_and_safe(client: TestCli
     assert other_response.status_code == 200, other_response.text
     assert other_response.json()["total_executions"] == 1
     assert other_response.json()["counts_by_status"] == {"running": 1}
+
+
+def test_system_owned_scheduler_execution_is_hidden_from_user_endpoints(client: TestClient):
+    from backend.app.services import execution_ledger
+
+    _user_id, token = _signup(client, "scheduler-system-hidden@example.com")
+    scheduler_execution = execution_ledger.create_execution(
+        user_id=None,
+        source_type="scheduled_job_run",
+        source_id="run_system_hidden",
+        status="completed",
+        metadata={"scheduled_job_id": "default-git-status-summary", "job_type": "git_status_summary"},
+    )
+    execution_ledger.append_execution_event(
+        scheduler_execution["execution_id"],
+        "scheduler_job_completed",
+        payload={"run_id": "run_system_hidden", "scheduled_job_id": "default-git-status-summary", "has_error": False},
+    )
+
+    list_response = client.get("/executions/me", headers=_auth_header(token))
+    assert list_response.status_code == 200, list_response.text
+    assert list_response.json()["executions"] == []
+
+    summary_response = client.get("/executions/summary", headers=_auth_header(token))
+    assert summary_response.status_code == 200, summary_response.text
+    assert summary_response.json()["total_executions"] == 0
+
+    detail_response = client.get(f"/executions/{scheduler_execution['execution_id']}", headers=_auth_header(token))
+    assert detail_response.status_code in {403, 404}

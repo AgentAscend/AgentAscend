@@ -302,6 +302,92 @@ def _append_task_output_artifact(conn: Any, task_id: str, output_id: str, output
     )
 
 
+def _scheduler_execution_ledger_enabled() -> bool:
+    return execution_ledger.is_execution_ledger_enabled() and os.getenv("SCHEDULER_EXECUTION_LEDGER_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _scheduler_execution_status(job_status: str | None) -> str:
+    return "completed" if (job_status or "").strip().lower() == "success" else "failed"
+
+
+def _build_scheduler_ledger_metadata(
+    job: dict[str, Any],
+    run_id: str,
+    started_at: str,
+    finished_at: str | None = None,
+    result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "run_id": run_id,
+        "scheduled_job_id": job.get("id"),
+        "job_type": job.get("job_type"),
+        "schedule_type": job.get("schedule_type"),
+        "model_tier": job.get("model_tier"),
+        "priority": job.get("priority"),
+        "created_by": job.get("created_by"),
+        "started_at": started_at,
+    }
+    if finished_at is not None:
+        metadata["finished_at"] = finished_at
+    if result is not None:
+        final_status = str(result.get("status") or "failed")
+        metadata["final_status"] = final_status
+        metadata["has_error"] = bool(result.get("error")) or final_status != "success"
+        metadata["output_summary_length"] = len(str(result.get("summary") or ""))
+    return metadata
+
+
+def _append_scheduler_ledger_start(job: dict[str, Any], run_id: str, started_at: str) -> str | None:
+    if not _scheduler_execution_ledger_enabled():
+        return None
+    try:
+        metadata = _build_scheduler_ledger_metadata(job, run_id, started_at)
+        execution = execution_ledger.create_execution(
+            user_id=None,
+            source_type="scheduled_job_run",
+            source_id=run_id,
+            agent_id=None,
+            status="running",
+            metadata=metadata,
+        )
+        execution_ledger.append_execution_event(
+            execution_id=execution["execution_id"],
+            event_type="scheduler_job_started",
+            payload=metadata,
+        )
+        return execution["execution_id"]
+    except Exception:  # noqa: BLE001 - scheduler ledger writes must not break normal job execution
+        return None
+
+
+def _append_scheduler_ledger_finish(
+    execution_id: str | None,
+    job: dict[str, Any],
+    run_id: str,
+    started_at: str,
+    finished_at: str,
+    result: dict[str, Any],
+) -> None:
+    if not execution_id or not _scheduler_execution_ledger_enabled():
+        return
+    try:
+        metadata = _build_scheduler_ledger_metadata(job, run_id, started_at, finished_at=finished_at, result=result)
+        event_type = "scheduler_job_completed" if _scheduler_execution_status(str(result.get("status") or "")) == "completed" else "scheduler_job_failed"
+        execution_ledger.append_execution_event(execution_id=execution_id, event_type=event_type, payload=metadata)
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE executions SET metadata_json = ? WHERE execution_id = ?",
+                (json.dumps(metadata, sort_keys=True), execution_id),
+            )
+            conn.commit()
+        if event_type == "scheduler_job_completed":
+            execution_ledger.mark_execution_completed(execution_id)
+        else:
+            execution_ledger.mark_execution_failed(execution_id)
+    except Exception:  # noqa: BLE001 - scheduler ledger writes must not break normal job execution
+        return
+
+
 def _execute_user_task(task: dict[str, Any]) -> str:
     task_type = str(task.get("type") or "general").strip().lower()
     title = str(task.get("title") or "Untitled task").strip()
@@ -490,6 +576,7 @@ def run_job_once(job_id: str) -> dict[str, Any]:
             (run_id, job_id, started_at, job["model_tier"], json.dumps({"job_type": job["job_type"]}, sort_keys=True)),
         )
         conn.commit()
+    scheduler_execution_id = _append_scheduler_ledger_start(job, run_id, started_at)
 
     try:
         handler = JOB_HANDLERS.get(job["job_type"], lambda j: {"status": "success", "summary": f"No-op suggested job recorded: {j['name']}", "metadata": {"suggested": True}})
@@ -527,5 +614,13 @@ def run_job_once(job_id: str) -> dict[str, Any]:
             (finished_at, finished_at, job_id),
         )
         conn.commit()
+    _append_scheduler_ledger_finish(
+        scheduler_execution_id,
+        job,
+        run_id,
+        started_at,
+        finished_at,
+        {"status": status, "summary": summary, "error": error},
+    )
 
     return {"run_id": run_id, "job_id": job_id, "status": status, "summary": summary, "error": error}

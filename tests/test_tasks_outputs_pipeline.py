@@ -414,6 +414,58 @@ def test_scheduler_worker_does_not_write_output_artifact_when_execution_ledger_d
     assert output_created_count == 0
 
 
+def test_task_queue_worker_scheduler_ledger_row_uses_safe_aggregate_metadata(client: TestClient, monkeypatch):
+    monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
+    monkeypatch.setenv("SCHEDULER_EXECUTION_LEDGER_ENABLED", "true")
+    _user_id, token = _signup(client, "tasks-scheduler-ledger-safe@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Scheduler aggregate task", "type": "analysis", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    from backend.app.services.job_runner import run_job_once
+
+    run = run_job_once(_task_worker_job_id())
+    assert run["status"] == "success"
+
+    user_execution = _execution_for_task(task_id)
+    assert user_execution is not None
+    assert user_execution["source_type"] == "task"
+    assert user_execution["user_id"] == _user_id
+
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        scheduler_execution = conn.execute(
+            "SELECT * FROM executions WHERE source_type='scheduled_job_run' AND source_id=?",
+            (run["run_id"],),
+        ).fetchone()
+        assert scheduler_execution is not None
+        scheduler_events = conn.execute(
+            "SELECT event_type, payload_json FROM execution_events WHERE execution_id=? ORDER BY id ASC",
+            (scheduler_execution["execution_id"],),
+        ).fetchall()
+
+    assert scheduler_execution["user_id"] is None
+    metadata = json.loads(scheduler_execution["metadata_json"])
+    assert metadata["job_type"] == "task_queue_worker"
+    assert metadata["final_status"] == "success"
+    assert isinstance(metadata["output_summary_length"], int)
+    metadata_text = json.dumps(metadata).lower()
+    assert task_id.lower() not in metadata_text
+    assert "output_ids" not in metadata_text
+    assert "content" not in metadata_text
+    assert "error_message" not in metadata_text
+    assert "token" not in metadata_text
+    event_payloads_text = json.dumps([json.loads(event["payload_json"]) for event in scheduler_events]).lower()
+    assert task_id.lower() not in event_payloads_text
+    assert "output_ids" not in event_payloads_text
+    assert "content" not in event_payloads_text
+
+
 def test_scheduler_worker_writes_output_artifact_and_event_when_execution_ledger_enabled(client: TestClient, monkeypatch):
     monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
     _user_id, token = _signup(client, "tasks-ledger-output-enabled@example.com")
