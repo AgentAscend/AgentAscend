@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "packages": {
+    "node": "22"
+  },
+  "steps": {
+    "node-payment-helper": {
+      "inputs": [
+        {
+          "step": "build"
+        }
+      ],
+      "commands": [
+        {
+          "cmd": "cd node-payment-helper && npm ci",
+          "customName": "Install Node payment helper dependencies"
+        },
+        {
+          "cmd": "cd node-payment-helper && npm run build",
+          "customName": "Build Node payment helper"
+        },
+        {
+          "cmd": "python scripts/check_node_payment_helper_runtime.py",
+          "customName": "Verify Node payment helper runtime"
+        }
+      ],
+      "deployOutputs": [
+        {
+          "include": [
+            "node-payment-helper/dist",
+            "node-payment-helper/node_modules"
+          ]
+        }
+      ]
+    }
+  },
+  "deploy": {
+    "startCommand": "uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
+  }
+}
