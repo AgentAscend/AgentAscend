@@ -6,6 +6,9 @@
   "description": "Isolated Pump.fun payment helper scaffold for AgentAscend.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "agentascend-payment-helper": "dist/cli.js"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

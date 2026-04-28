@@ -10,7 +10,10 @@ export type SafeErrorCode =
   | "FORBIDDEN_FIELD"
   | "MISSING_SOLANA_RPC_URL"
   | "BUILD_PAYMENT_TRANSACTION_FAILED"
-  | "VALIDATE_INVOICE_PAYMENT_FAILED";
+  | "VALIDATE_INVOICE_PAYMENT_FAILED"
+  | "INVALID_JSON"
+  | "INVALID_REQUEST"
+  | "UNKNOWN_COMMAND";
 
 export interface InvoiceParamsInput {
   userWallet: string;
