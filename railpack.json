@@ -11,18 +11,9 @@
         }
       ],
       "commands": [
-        {
-          "cmd": "cd node-payment-helper && npm ci",
-          "customName": "Install Node payment helper dependencies"
-        },
-        {
-          "cmd": "cd node-payment-helper && npm run build",
-          "customName": "Build Node payment helper"
-        },
-        {
-          "cmd": "python scripts/check_node_payment_helper_runtime.py",
-          "customName": "Verify Node payment helper runtime"
-        }
+        "cd node-payment-helper && npm ci",
+        "cd node-payment-helper && npm run build",
+        "python scripts/check_node_payment_helper_runtime.py"
       ],
       "deployOutputs": [
         {
