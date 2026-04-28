@@ -57,6 +57,14 @@ def _intent_row(reference: str):
         ).fetchone()
 
 
+def test_pumpfun_agent_mint_default_is_real_asnd_mint(monkeypatch):
+    monkeypatch.delenv("AGENT_TOKEN_MINT_ADDRESS", raising=False)
+
+    from backend.app.routes import pumpfun_payments
+
+    assert pumpfun_payments._agent_token_mint() == AGENT_MINT
+
+
 def test_pumpfun_create_requires_auth(client: TestClient):
     response = client.post(
         "/payments/pumpfun/create",
