@@ -261,7 +261,15 @@ def _record_verified_payment_and_access(*, row, tx_signature: str, invoice_id: s
                 "verified",
             ),
         )
-        payment_id = cursor.lastrowid
+        payment_id = getattr(cursor, "lastrowid", None)
+        if payment_id is None:
+            payment_row = conn.execute(
+                "SELECT id FROM payments WHERE tx_signature = ? LIMIT 1",
+                (tx_signature,),
+            ).fetchone()
+            if payment_row is None:
+                fail(500, "payment_record_error", "Payment record could not be confirmed")
+            payment_id = payment_row["id"]
         conn.execute(
             """
             UPDATE payment_intents

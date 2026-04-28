@@ -416,3 +416,91 @@ def test_pumpfun_verify_expired_intent_does_not_call_helper_or_grant_access(clie
     from backend.app.services.access_service import FEATURE_RANDOM_NUMBER, has_access
 
     assert has_access(user_id, FEATURE_RANDOM_NUMBER) is False
+
+
+def test_record_verified_payment_and_access_handles_postgres_cursor_without_lastrowid(client: TestClient, monkeypatch):
+    user_id, token = _signup(client, "pumpfun-postgres-id@example.com")
+
+    monkeypatch.setattr(
+        "backend.app.routes.pumpfun_payments.pumpfun_node_helper.build_payment_transaction",
+        lambda _payload: {"ok": True, "txBase64": "unsigned-tx-base64", "invoiceId": "invoice-postgres-id"},
+    )
+    create_response = client.post(
+        "/payments/pumpfun/create",
+        json={"user_id": user_id, "user_wallet": "Wallet999999999999999999999999999999999999"},
+        headers=_auth_header(token),
+    )
+    assert create_response.status_code == 200, create_response.text
+    row = _intent_row(create_response.json()["reference"])
+
+    from backend.app.routes import pumpfun_payments
+    from backend.app.db.session import get_connection as real_get_connection
+
+    class CursorWithoutLastrowid:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def fetchone(self):
+            return self._cursor.fetchone()
+
+        def fetchall(self):
+            return self._cursor.fetchall()
+
+        def __iter__(self):
+            return iter(self._cursor)
+
+    class ConnectionReturningInsertCursorWithoutLastrowid:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def execute(self, sql, params=()):
+            cursor = self._conn.execute(sql, params)
+            if sql.lstrip().upper().startswith("INSERT INTO PAYMENTS"):
+                return CursorWithoutLastrowid(cursor)
+            return cursor
+
+        def commit(self):
+            self._conn.commit()
+
+        def rollback(self):
+            self._conn.rollback()
+
+        def close(self):
+            self._conn.close()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            if exc_type is None:
+                self.commit()
+            else:
+                self.rollback()
+            self.close()
+            return False
+
+    def wrapped_get_connection():
+        return ConnectionReturningInsertCursorWithoutLastrowid(real_get_connection())
+
+    monkeypatch.setattr(pumpfun_payments, "get_connection", wrapped_get_connection)
+
+    payment_id = pumpfun_payments._record_verified_payment_and_access(
+        row=row,
+        tx_signature="9" * 88,
+        invoice_id="invoice-postgres-id",
+    )
+
+    with real_get_connection() as conn:
+        payment = conn.execute(
+            "SELECT id FROM payments WHERE tx_signature = ?",
+            ("9" * 88,),
+        ).fetchone()
+        grant = conn.execute(
+            "SELECT payment_id FROM access_grants WHERE intent_reference = ?",
+            (row["reference"],),
+        ).fetchone()
+
+    assert payment is not None
+    assert payment_id == payment["id"]
+    assert grant is not None
+    assert grant["payment_id"] == payment_id
