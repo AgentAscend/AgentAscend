@@ -522,7 +522,30 @@ def _init_sqlite_db():
                 token TEXT NOT NULL,
                 status TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                tx_signature TEXT UNIQUE
+                tx_signature TEXT UNIQUE,
+                intent_reference TEXT,
+                user_wallet TEXT,
+                agent_token_mint TEXT,
+                currency_mint TEXT,
+                currency_symbol TEXT,
+                amount_smallest_unit INTEGER,
+                memo INTEGER,
+                start_time INTEGER,
+                end_time INTEGER,
+                invoice_id TEXT,
+                recipient_address TEXT,
+                payer_wallet TEXT,
+                chain TEXT,
+                mint_address TEXT,
+                amount_expected REAL,
+                amount_received REAL,
+                confirmation_status TEXT,
+                block_time INTEGER,
+                slot INTEGER,
+                verification_status TEXT,
+                failure_reason TEXT,
+                updated_at DATETIME,
+                verified_at DATETIME
             )
             """
         )
@@ -531,12 +554,42 @@ def _init_sqlite_db():
             row[1]
             for row in conn.execute("PRAGMA table_info(payments)").fetchall()
         }
-        if "tx_signature" not in payment_columns:
-            conn.execute("ALTER TABLE payments ADD COLUMN tx_signature TEXT")
+        payment_column_migrations = {
+            "tx_signature": "TEXT",
+            "intent_reference": "TEXT",
+            "user_wallet": "TEXT",
+            "agent_token_mint": "TEXT",
+            "currency_mint": "TEXT",
+            "currency_symbol": "TEXT",
+            "amount_smallest_unit": "INTEGER",
+            "memo": "INTEGER",
+            "start_time": "INTEGER",
+            "end_time": "INTEGER",
+            "invoice_id": "TEXT",
+            "recipient_address": "TEXT",
+            "payer_wallet": "TEXT",
+            "chain": "TEXT",
+            "mint_address": "TEXT",
+            "amount_expected": "REAL",
+            "amount_received": "REAL",
+            "confirmation_status": "TEXT",
+            "block_time": "INTEGER",
+            "slot": "INTEGER",
+            "verification_status": "TEXT",
+            "failure_reason": "TEXT",
+            "updated_at": "DATETIME",
+            "verified_at": "DATETIME",
+        }
+        for column, column_type in payment_column_migrations.items():
+            if column not in payment_columns:
+                conn.execute(f"ALTER TABLE payments ADD COLUMN {column} {column_type}")
 
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_tx_signature ON payments(tx_signature)"
         )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_intent_reference ON payments(intent_reference)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_invoice_id ON payments(invoice_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_user_status_created ON payments(user_id, status, created_at)")
 
         conn.execute(
             """
@@ -545,10 +598,47 @@ def _init_sqlite_db():
                 user_id TEXT NOT NULL,
                 feature_name TEXT NOT NULL,
                 status TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                payment_id INTEGER,
+                intent_reference TEXT,
+                grant_scope TEXT,
+                source TEXT,
+                plan_id TEXT,
+                product_id TEXT,
+                tool_id TEXT,
+                expires_at DATETIME,
+                revoked_at DATETIME,
+                updated_at DATETIME,
+                metadata_json TEXT
             )
             """
         )
+
+        access_grant_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(access_grants)").fetchall()
+        }
+        access_grant_column_migrations = {
+            "payment_id": "INTEGER",
+            "intent_reference": "TEXT",
+            "grant_scope": "TEXT",
+            "source": "TEXT",
+            "plan_id": "TEXT",
+            "product_id": "TEXT",
+            "tool_id": "TEXT",
+            "expires_at": "DATETIME",
+            "revoked_at": "DATETIME",
+            "updated_at": "DATETIME",
+            "metadata_json": "TEXT",
+        }
+        for column, column_type in access_grant_column_migrations.items():
+            if column not in access_grant_columns:
+                conn.execute(f"ALTER TABLE access_grants ADD COLUMN {column} {column_type}")
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_access_grants_user_feature_status ON access_grants(user_id, feature_name, status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_access_grants_user_scope_status ON access_grants(user_id, grant_scope, status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_access_grants_payment_id ON access_grants(payment_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_access_grants_intent_reference ON access_grants(intent_reference)")
 
         conn.execute(
             """
@@ -564,6 +654,93 @@ def _init_sqlite_db():
             )
             """
         )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS payment_intents (
+                reference TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                token TEXT NOT NULL,
+                expires_at_epoch INTEGER NOT NULL,
+                consumed_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                user_wallet TEXT,
+                agent_token_mint TEXT,
+                currency_mint TEXT,
+                currency_symbol TEXT,
+                amount_smallest_unit INTEGER,
+                memo INTEGER,
+                start_time INTEGER,
+                end_time INTEGER,
+                invoice_id TEXT,
+                plan_id TEXT,
+                product_id TEXT,
+                tool_id TEXT,
+                access_tier TEXT,
+                amount_expected REAL,
+                recipient_address TEXT,
+                expected_wallet TEXT,
+                status TEXT,
+                tx_signature TEXT,
+                verification_status TEXT,
+                updated_at DATETIME,
+                expires_at DATETIME,
+                completed_at DATETIME,
+                failed_at DATETIME,
+                canceled_at DATETIME,
+                failure_reason TEXT,
+                metadata_json TEXT,
+                mint_address TEXT,
+                currency TEXT,
+                chain TEXT
+            )
+            """
+        )
+
+        payment_intent_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(payment_intents)").fetchall()
+        }
+        payment_intent_column_migrations = {
+            "user_wallet": "TEXT",
+            "agent_token_mint": "TEXT",
+            "currency_mint": "TEXT",
+            "currency_symbol": "TEXT",
+            "amount_smallest_unit": "INTEGER",
+            "memo": "INTEGER",
+            "start_time": "INTEGER",
+            "end_time": "INTEGER",
+            "invoice_id": "TEXT",
+            "plan_id": "TEXT",
+            "product_id": "TEXT",
+            "tool_id": "TEXT",
+            "access_tier": "TEXT",
+            "amount_expected": "REAL",
+            "recipient_address": "TEXT",
+            "expected_wallet": "TEXT",
+            "status": "TEXT",
+            "tx_signature": "TEXT",
+            "verification_status": "TEXT",
+            "updated_at": "DATETIME",
+            "expires_at": "DATETIME",
+            "completed_at": "DATETIME",
+            "failed_at": "DATETIME",
+            "canceled_at": "DATETIME",
+            "failure_reason": "TEXT",
+            "metadata_json": "TEXT",
+            "mint_address": "TEXT",
+            "currency": "TEXT",
+            "chain": "TEXT",
+        }
+        for column, column_type in payment_intent_column_migrations.items():
+            if column not in payment_intent_columns:
+                conn.execute(f"ALTER TABLE payment_intents ADD COLUMN {column} {column_type}")
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_intents_user_status_created ON payment_intents(user_id, status, created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_intents_status_expires ON payment_intents(status, expires_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_intents_invoice_id ON payment_intents(invoice_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_intents_memo_time ON payment_intents(memo, start_time, end_time)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_intents_tx_signature ON payment_intents(tx_signature)")
 
         conn.execute(
             """
@@ -1057,14 +1234,48 @@ _POSTGRES_TABLE_DDL = [
         token TEXT NOT NULL,
         status TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-        tx_signature TEXT UNIQUE
+        tx_signature TEXT UNIQUE,
+        intent_reference TEXT,
+        user_wallet TEXT,
+        agent_token_mint TEXT,
+        currency_mint TEXT,
+        currency_symbol TEXT,
+        amount_smallest_unit BIGINT,
+        memo BIGINT,
+        start_time BIGINT,
+        end_time BIGINT,
+        invoice_id TEXT,
+        recipient_address TEXT,
+        payer_wallet TEXT,
+        chain TEXT,
+        mint_address TEXT,
+        amount_expected NUMERIC,
+        amount_received NUMERIC,
+        confirmation_status TEXT,
+        block_time BIGINT,
+        slot BIGINT,
+        verification_status TEXT,
+        failure_reason TEXT,
+        updated_at TIMESTAMPTZ,
+        verified_at TIMESTAMPTZ
     )""",
     """CREATE TABLE IF NOT EXISTS access_grants (
         id SERIAL PRIMARY KEY,
         user_id TEXT NOT NULL,
         feature_name TEXT NOT NULL,
         status TEXT NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        payment_id INTEGER,
+        intent_reference TEXT,
+        grant_scope TEXT,
+        source TEXT,
+        plan_id TEXT,
+        product_id TEXT,
+        tool_id TEXT,
+        expires_at TIMESTAMPTZ,
+        revoked_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ,
+        metadata_json TEXT
     )""",
     """CREATE TABLE IF NOT EXISTS idempotency_records (
         id SERIAL PRIMARY KEY,
@@ -1075,6 +1286,43 @@ _POSTGRES_TABLE_DDL = [
         status_code INTEGER,
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(operation_scope, idempotency_key)
+    )""",
+    """CREATE TABLE IF NOT EXISTS payment_intents (
+        reference TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        token TEXT NOT NULL,
+        expires_at_epoch INTEGER NOT NULL,
+        consumed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        user_wallet TEXT,
+        agent_token_mint TEXT,
+        currency_mint TEXT,
+        currency_symbol TEXT,
+        amount_smallest_unit BIGINT,
+        memo BIGINT,
+        start_time BIGINT,
+        end_time BIGINT,
+        invoice_id TEXT,
+        plan_id TEXT,
+        product_id TEXT,
+        tool_id TEXT,
+        access_tier TEXT,
+        amount_expected NUMERIC,
+        recipient_address TEXT,
+        expected_wallet TEXT,
+        status TEXT,
+        tx_signature TEXT,
+        verification_status TEXT,
+        updated_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ,
+        completed_at TIMESTAMPTZ,
+        failed_at TIMESTAMPTZ,
+        canceled_at TIMESTAMPTZ,
+        failure_reason TEXT,
+        metadata_json TEXT,
+        mint_address TEXT,
+        currency TEXT,
+        chain TEXT
     )""",
     """CREATE TABLE IF NOT EXISTS scheduled_jobs (
         id TEXT PRIMARY KEY,
@@ -1452,6 +1700,18 @@ _POSTGRES_INDEX_DDL = [
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)",
     "CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_tx_signature ON payments(tx_signature)",
+    "CREATE INDEX IF NOT EXISTS idx_payments_intent_reference ON payments(intent_reference)",
+    "CREATE INDEX IF NOT EXISTS idx_payments_invoice_id ON payments(invoice_id)",
+    "CREATE INDEX IF NOT EXISTS idx_payments_user_status_created ON payments(user_id, status, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_payment_intents_user_status_created ON payment_intents(user_id, status, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_payment_intents_status_expires ON payment_intents(status, expires_at)",
+    "CREATE INDEX IF NOT EXISTS idx_payment_intents_invoice_id ON payment_intents(invoice_id)",
+    "CREATE INDEX IF NOT EXISTS idx_payment_intents_memo_time ON payment_intents(memo, start_time, end_time)",
+    "CREATE INDEX IF NOT EXISTS idx_payment_intents_tx_signature ON payment_intents(tx_signature)",
+    "CREATE INDEX IF NOT EXISTS idx_access_grants_user_feature_status ON access_grants(user_id, feature_name, status)",
+    "CREATE INDEX IF NOT EXISTS idx_access_grants_user_scope_status ON access_grants(user_id, grant_scope, status)",
+    "CREATE INDEX IF NOT EXISTS idx_access_grants_payment_id ON access_grants(payment_id)",
+    "CREATE INDEX IF NOT EXISTS idx_access_grants_intent_reference ON access_grants(intent_reference)",
     "CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next_run ON scheduled_jobs(enabled, next_run_at)",
     "CREATE INDEX IF NOT EXISTS idx_job_runs_job_started ON job_runs(scheduled_job_id, started_at)",
     "CREATE INDEX IF NOT EXISTS idx_agent_findings_source ON agent_findings(source_job_id)",
@@ -1472,7 +1732,76 @@ _POSTGRES_COLUMN_MIGRATIONS = {
         ("email", "TEXT"), ("password_hash", "TEXT"), ("display_name", "TEXT"),
         ("bio", "TEXT"), ("avatar_url", "TEXT"), ("updated_at", "TIMESTAMPTZ"),
     ],
-    "payments": [("tx_signature", "TEXT")],
+    "payments": [
+        ("tx_signature", "TEXT"),
+        ("intent_reference", "TEXT"),
+        ("user_wallet", "TEXT"),
+        ("agent_token_mint", "TEXT"),
+        ("currency_mint", "TEXT"),
+        ("currency_symbol", "TEXT"),
+        ("amount_smallest_unit", "BIGINT"),
+        ("memo", "BIGINT"),
+        ("start_time", "BIGINT"),
+        ("end_time", "BIGINT"),
+        ("invoice_id", "TEXT"),
+        ("recipient_address", "TEXT"),
+        ("payer_wallet", "TEXT"),
+        ("chain", "TEXT"),
+        ("mint_address", "TEXT"),
+        ("amount_expected", "NUMERIC"),
+        ("amount_received", "NUMERIC"),
+        ("confirmation_status", "TEXT"),
+        ("block_time", "BIGINT"),
+        ("slot", "BIGINT"),
+        ("verification_status", "TEXT"),
+        ("failure_reason", "TEXT"),
+        ("updated_at", "TIMESTAMPTZ"),
+        ("verified_at", "TIMESTAMPTZ"),
+    ],
+    "access_grants": [
+        ("payment_id", "INTEGER"),
+        ("intent_reference", "TEXT"),
+        ("grant_scope", "TEXT"),
+        ("source", "TEXT"),
+        ("plan_id", "TEXT"),
+        ("product_id", "TEXT"),
+        ("tool_id", "TEXT"),
+        ("expires_at", "TIMESTAMPTZ"),
+        ("revoked_at", "TIMESTAMPTZ"),
+        ("updated_at", "TIMESTAMPTZ"),
+        ("metadata_json", "TEXT"),
+    ],
+    "payment_intents": [
+        ("user_wallet", "TEXT"),
+        ("agent_token_mint", "TEXT"),
+        ("currency_mint", "TEXT"),
+        ("currency_symbol", "TEXT"),
+        ("amount_smallest_unit", "BIGINT"),
+        ("memo", "BIGINT"),
+        ("start_time", "BIGINT"),
+        ("end_time", "BIGINT"),
+        ("invoice_id", "TEXT"),
+        ("plan_id", "TEXT"),
+        ("product_id", "TEXT"),
+        ("tool_id", "TEXT"),
+        ("access_tier", "TEXT"),
+        ("amount_expected", "NUMERIC"),
+        ("recipient_address", "TEXT"),
+        ("expected_wallet", "TEXT"),
+        ("status", "TEXT"),
+        ("tx_signature", "TEXT"),
+        ("verification_status", "TEXT"),
+        ("updated_at", "TIMESTAMPTZ"),
+        ("expires_at", "TIMESTAMPTZ"),
+        ("completed_at", "TIMESTAMPTZ"),
+        ("failed_at", "TIMESTAMPTZ"),
+        ("canceled_at", "TIMESTAMPTZ"),
+        ("failure_reason", "TEXT"),
+        ("metadata_json", "TEXT"),
+        ("mint_address", "TEXT"),
+        ("currency", "TEXT"),
+        ("chain", "TEXT"),
+    ],
     "agents": [("owner_user_id", "TEXT")],
     "tasks": [
         ("user_id", "TEXT"), ("agent_id", "TEXT"), ("type", "TEXT NOT NULL DEFAULT 'general'"),
