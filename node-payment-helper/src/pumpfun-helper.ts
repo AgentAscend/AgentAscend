@@ -1,5 +1,5 @@
-import { PumpAgent, getInvoiceIdPDA } from "@pump-fun/agent-payments-sdk";
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
+import { loadPumpfunSdk } from "./sdk-loader.js";
 import type {
   BuildPaymentTransactionResult,
   InvoiceParamsInput,
@@ -17,6 +17,7 @@ function readSolanaRpcUrl(): string | undefined {
 
 function deriveInvoiceId(params: Pick<InvoiceParamsInput, "agentTokenMint" | "currencyMint" | "amount" | "memo" | "startTime" | "endTime">): string | undefined {
   try {
+    const { getInvoiceIdPDA } = loadPumpfunSdk();
     const [invoiceId] = getInvoiceIdPDA(
       new PublicKey(params.agentTokenMint),
       new PublicKey(params.currencyMint),
@@ -48,6 +49,7 @@ export async function buildPaymentTransaction(
   const params = validated.value;
 
   try {
+    const { PumpAgent } = loadPumpfunSdk();
     const connection = new Connection(rpcUrl);
     const agentMint = new PublicKey(params.agentTokenMint);
     const currencyMint = new PublicKey(params.currencyMint);
@@ -99,6 +101,7 @@ export async function validateInvoicePayment(
   const params = validated.value;
 
   try {
+    const { PumpAgent } = loadPumpfunSdk();
     const connection = new Connection(rpcUrl);
     const agentMint = new PublicKey(params.agentTokenMint);
     const currencyMint = new PublicKey(params.currencyMint);

@@ -11,15 +11,17 @@ const transactionSerializeSpy = vi.spyOn(Transaction.prototype, "serialize");
 const transactionSignSpy = vi.spyOn(Transaction.prototype, "sign");
 const transactionPartialSignSpy = vi.spyOn(Transaction.prototype, "partialSign");
 
-vi.mock("@pump-fun/agent-payments-sdk", () => ({
-  PumpAgent: vi.fn().mockImplementation((mint, environment, connection) => {
-    pumpAgentConstructorMock(mint, environment, connection);
-    return {
-      buildAcceptPaymentInstructions: buildAcceptPaymentInstructionsMock,
-      validateInvoicePayment: validateInvoicePaymentMock
-    };
-  }),
-  getInvoiceIdPDA: getInvoiceIdPDAMock
+vi.mock("../src/sdk-loader", () => ({
+  loadPumpfunSdk: () => ({
+    PumpAgent: vi.fn().mockImplementation((mint, environment, connection) => {
+      pumpAgentConstructorMock(mint, environment, connection);
+      return {
+        buildAcceptPaymentInstructions: buildAcceptPaymentInstructionsMock,
+        validateInvoicePayment: validateInvoicePaymentMock
+      };
+    }),
+    getInvoiceIdPDA: getInvoiceIdPDAMock
+  })
 }));
 
 vi.mock("@solana/web3.js", async (importOriginal) => {
