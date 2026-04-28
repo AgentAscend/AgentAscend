@@ -1,0 +1,19 @@
+providers = ["python", "node"]
+
+[phases.setup]
+nixPkgs = ["python312", "nodejs_22"]
+
+[phases.install]
+cmds = [
+  "python -m pip install -r requirements.txt",
+  "cd node-payment-helper && npm ci"
+]
+
+[phases.build]
+cmds = [
+  "cd node-payment-helper && npm run build",
+  "python scripts/check_node_payment_helper_runtime.py"
+]
+
+[start]
+cmd = "uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
