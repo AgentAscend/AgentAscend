@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.app.providers.telegram_identity import telegram_user_to_user_id
 from backend.app.routes.payments import create_payment
-from backend.app.routes.tools import random_number
+from backend.app.routes.tools import random_number_for_user
 from backend.app.schemas.payments import PaymentCreateRequest
 from backend.app.schemas.telegram import TelegramCommandRequest, TelegramCommandResponse
 
@@ -19,7 +19,7 @@ def telegram_command(payload: TelegramCommandRequest):
     if payload.command != "/random":
         raise HTTPException(status_code=400, detail="Unsupported command")
 
-    tool_result = random_number(user_id)
+    tool_result = random_number_for_user(user_id)
     if tool_result.get("status") == "payment_required":
         payment_payload = create_payment(PaymentCreateRequest(user_id=user_id, token="SOL"))
         return {
