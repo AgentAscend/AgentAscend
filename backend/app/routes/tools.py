@@ -3,6 +3,7 @@ import random
 from fastapi import APIRouter, Header
 
 from backend.app.services.access_service import FEATURE_RANDOM_NUMBER, has_access
+from backend.app.services.payment_config import payment_required_tool_message
 from backend.app.services.auth_service import require_user_access
 
 router = APIRouter()
@@ -13,7 +14,7 @@ def random_number_for_user(user_id: str):
         return {
             "status": "payment_required",
             "payment_required": True,
-            "message": "Please pay 0.1 SOL to access this tool",
+            "message": payment_required_tool_message(),
         }
 
     return {

@@ -13,13 +13,12 @@ from backend.app.services import pumpfun_node_helper
 from backend.app.services.access_service import FEATURE_RANDOM_NUMBER
 from backend.app.services.auth_service import require_user_access
 from backend.app.services.error_response import fail
+from backend.app.services.payment_config import required_positive_int_env
 from backend.app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter()
 
-DEFAULT_AGENT_TOKEN_MINT = "9jwExoB9h42bNeUyCH8qBJAye3NJGrToiX62DQTEpump"
 DEFAULT_CURRENCY_MINT = "So11111111111111111111111111111111111111112"
-DEFAULT_PRICE_AMOUNT_SMALLEST_UNIT = 100_000_000
 DEFAULT_PAYMENT_TTL_SECONDS = 900
 _SIGNATURE_PATTERN = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{80,100}$")
 
@@ -67,7 +66,7 @@ class PumpfunVerifyResponse(BaseModel):
     invoiceId: str | None = None
 
 
-def _required_positive_int_env(name: str, default: int) -> int:
+def _optional_positive_int_env(name: str, default: int) -> int:
     raw = os.getenv(name)
     if raw is None or raw.strip() == "":
         return default
@@ -88,19 +87,28 @@ def _config_value(name: str, default: str) -> str:
 
 
 def _payment_ttl_seconds() -> int:
-    return _required_positive_int_env("PAYMENT_TTL_SECONDS", DEFAULT_PAYMENT_TTL_SECONDS)
+    return _optional_positive_int_env("PAYMENT_TTL_SECONDS", DEFAULT_PAYMENT_TTL_SECONDS)
 
 
 def _amount_smallest_unit() -> int:
-    return _required_positive_int_env("PRICE_AMOUNT_SMALLEST_UNIT", DEFAULT_PRICE_AMOUNT_SMALLEST_UNIT)
+    try:
+        return required_positive_int_env("PRICE_AMOUNT_SMALLEST_UNIT")
+    except Exception as exc:
+        fail(500, "payment_config_error", str(getattr(exc, "detail", "PRICE_AMOUNT_SMALLEST_UNIT is not configured")))
 
 
 def _agent_token_mint() -> str:
-    return _config_value("AGENT_TOKEN_MINT_ADDRESS", DEFAULT_AGENT_TOKEN_MINT)
+    value = (os.getenv("AGENT_TOKEN_MINT_ADDRESS") or "").strip()
+    if not value:
+        fail(500, "payment_config_error", "AGENT_TOKEN_MINT_ADDRESS is not configured")
+    return value
 
 
 def _currency_mint() -> str:
-    return _config_value("CURRENCY_MINT", DEFAULT_CURRENCY_MINT)
+    value = (os.getenv("CURRENCY_MINT") or "").strip()
+    if not value:
+        fail(500, "payment_config_error", "CURRENCY_MINT is not configured")
+    return value
 
 
 def _new_reference(user_id: str) -> str:

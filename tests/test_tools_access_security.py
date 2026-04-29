@@ -112,6 +112,20 @@ def test_tools_random_number_owner_without_access_gets_payment_required(client: 
     assert body["payment_required"] is True
 
 
+def test_tools_random_number_payment_message_uses_configured_price(client: TestClient, monkeypatch):
+    owner_user_id, owner_token = _signup(client, "tool-owner-message@example.com")
+    monkeypatch.setenv("SOL_PRICE_LAMPORTS", "250000000")
+
+    response = client.post(
+        f"/tools/random-number?user_id={owner_user_id}",
+        headers=_auth_header(owner_token),
+    )
+
+    body = _assert_status(response, 200)
+    assert body["status"] == "payment_required"
+    assert body["message"] == "Please pay 0.25 SOL to access this tool"
+
+
 def test_telegram_random_uses_internal_tool_helper_without_web_auth(client: TestClient):
     telegram_user_id = 424242
     mapped_user_id = f"tg:{telegram_user_id}"

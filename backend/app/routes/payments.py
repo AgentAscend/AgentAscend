@@ -21,6 +21,7 @@ from backend.app.schemas.payments import (
     PaymentVerifyResponse,
 )
 from backend.app.services.access_service import FEATURE_RANDOM_NUMBER, grant_access
+from backend.app.services.payment_config import sol_price_lamports as get_sol_price_lamports
 from backend.app.services.auth_service import require_user_access
 from backend.app.services.idempotency import check_or_begin, finalize, release_in_progress
 from backend.app.services.rate_limit import enforce_rate_limit
@@ -48,19 +49,7 @@ def _validate_signature_format(tx_signature: str) -> None:
 
 
 def _sol_price_lamports() -> int:
-    raw = os.getenv("SOL_PRICE_LAMPORTS")
-    if raw is None or raw.strip() == "":
-        return DEFAULT_SOL_PRICE_LAMPORTS
-
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise HTTPException(status_code=500, detail="SOL_PRICE_LAMPORTS must be an integer") from exc
-
-    if value <= 0:
-        raise HTTPException(status_code=500, detail="SOL_PRICE_LAMPORTS must be greater than zero")
-
-    return value
+    return get_sol_price_lamports()
 
 
 def _asnd_price_tokens() -> Decimal:
@@ -292,10 +281,19 @@ def verify_payment(payload: PaymentVerifyRequest, authorization: str | None = He
                 raise HTTPException(status_code=400, detail="Transaction signature already used") from exc
 
             payment_id = cursor.lastrowid
+            grant_access(
+                payload.user_id,
+                FEATURE_RANDOM_NUMBER,
+                conn=conn,
+                payment_id=payment_id,
+                intent_reference=payload.reference,
+                source="legacy_verify",
+            )
+            conn.execute(
+                "UPDATE payment_intents SET consumed_at = CURRENT_TIMESTAMP WHERE reference = ?",
+                (payload.reference,),
+            )
             conn.commit()
-
-        grant_access(payload.user_id, FEATURE_RANDOM_NUMBER)
-        _consume_payment_intent(payload.reference)
 
         response_payload = {
             "status": "payment_verified",
