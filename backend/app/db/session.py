@@ -478,6 +478,32 @@ def _rows_to_dicts(rows) -> list[dict]:
     return mapped
 
 
+def _redact_duplicate_sample_rows(rows: list[dict], key: str) -> list[dict]:
+    redacted: list[dict] = []
+    for row in rows:
+        masked = dict(row)
+        raw_value = str(masked.get(key) or "")
+        if raw_value:
+            masked[key] = f"***{raw_value[-6:]}"
+        redacted.append(masked)
+    return redacted
+
+
+def _log_replay_index_preflight_skip(db_type: str, duplicate_intent_rows: list, duplicate_payment_rows: list) -> None:
+    intent_samples = _redact_duplicate_sample_rows(_rows_to_dicts(duplicate_intent_rows), "intent_reference")
+    payment_samples = _redact_duplicate_sample_rows(_rows_to_dicts(duplicate_payment_rows), "payment_id")
+    logger.warning(
+        "Skipping replay index creation due to duplicate active access_grants",
+        extra={
+            "db_type": db_type,
+            "action": "skip_replay_index_creation",
+            "duplicate_category": "active_access_grants_replay_keys",
+            "duplicate_intent_rows": intent_samples,
+            "duplicate_payment_rows": payment_samples,
+        },
+    )
+
+
 def _access_grant_duplicate_samples(conn) -> tuple[list, list]:
     duplicate_intent_rows = conn.execute(
         """
@@ -506,13 +532,7 @@ def _create_access_grant_replay_unique_indexes_sqlite(conn: sqlite3.Connection) 
     duplicate_intent_rows, duplicate_payment_rows = _access_grant_duplicate_samples(conn)
 
     if duplicate_intent_rows or duplicate_payment_rows:
-        logger.warning(
-            "Skipping sqlite access_grants replay unique indexes due to existing duplicate active grants",
-            extra={
-                "duplicate_intent_rows": _rows_to_dicts(duplicate_intent_rows),
-                "duplicate_payment_rows": _rows_to_dicts(duplicate_payment_rows),
-            },
-        )
+        _log_replay_index_preflight_skip("sqlite", duplicate_intent_rows, duplicate_payment_rows)
         return
 
     conn.execute(ACCESS_GRANTS_ACTIVE_INTENT_UNIQUE_INDEX_SQL)
@@ -522,13 +542,7 @@ def _create_access_grant_replay_unique_indexes_sqlite(conn: sqlite3.Connection) 
 def _create_access_grant_replay_unique_indexes_postgres(conn) -> None:
     duplicate_intent_rows, duplicate_payment_rows = _access_grant_duplicate_samples(conn)
     if duplicate_intent_rows or duplicate_payment_rows:
-        logger.warning(
-            "Skipping postgres access_grants replay unique indexes due to existing duplicate active grants",
-            extra={
-                "duplicate_intent_rows": _rows_to_dicts(duplicate_intent_rows),
-                "duplicate_payment_rows": _rows_to_dicts(duplicate_payment_rows),
-            },
-        )
+        _log_replay_index_preflight_skip("postgres", duplicate_intent_rows, duplicate_payment_rows)
         return
 
     conn.execute(ACCESS_GRANTS_ACTIVE_INTENT_UNIQUE_INDEX_SQL)

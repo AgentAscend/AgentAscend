@@ -1,5 +1,7 @@
+import os
 import sqlite3
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -342,9 +344,11 @@ def test_postgres_preflight_creates_replay_unique_indexes_when_no_duplicates(mon
     class FakeConn:
         def execute(self, sql, params=None):
             executed_sql.append(sql)
+
             class _Cursor:
                 def fetchall(self_inner):
                     return []
+
             return _Cursor()
 
     monkeypatch.setattr(session, "_access_grant_duplicate_samples", lambda _conn: ([], []))
@@ -353,6 +357,104 @@ def test_postgres_preflight_creates_replay_unique_indexes_when_no_duplicates(mon
 
     assert session.ACCESS_GRANTS_ACTIVE_INTENT_UNIQUE_INDEX_SQL in executed_sql
     assert session.ACCESS_GRANTS_ACTIVE_PAYMENT_UNIQUE_INDEX_SQL in executed_sql
+
+
+def test_replay_preflight_skip_log_is_structured_and_redacted(caplog, monkeypatch):
+    import backend.app.db.session as session
+
+    class FakeConn:
+        def execute(self, sql, params=None):
+            class _Cursor:
+                def fetchall(self_inner):
+                    return []
+
+            return _Cursor()
+
+    monkeypatch.setattr(
+        session,
+        "_access_grant_duplicate_samples",
+        lambda _conn: (
+            [{"user_id": "u1", "feature_name": "f1", "intent_reference": "intent_secret_123456", "duplicate_count": 2}],
+            [{"user_id": "u1", "feature_name": "f1", "payment_id": "sig_secret_abcdef", "duplicate_count": 2}],
+        ),
+    )
+
+    with caplog.at_level("WARNING"):
+        session._create_access_grant_replay_unique_indexes_postgres(FakeConn())
+
+    record = next(r for r in caplog.records if "Skipping replay index creation" in r.message)
+    assert getattr(record, "db_type") == "postgres"
+    assert getattr(record, "action") == "skip_replay_index_creation"
+    assert getattr(record, "duplicate_category") == "active_access_grants_replay_keys"
+    assert getattr(record, "duplicate_intent_rows")[0]["intent_reference"].startswith("***")
+    assert getattr(record, "duplicate_payment_rows")[0]["payment_id"].startswith("***")
+    assert "intent_secret_123456" not in str(getattr(record, "duplicate_intent_rows"))
+    assert "sig_secret_abcdef" not in str(getattr(record, "duplicate_payment_rows"))
+
+
+@pytest.mark.skipif(not os.getenv("TEST_POSTGRES_DSN"), reason="TEST_POSTGRES_DSN not set")
+def test_postgres_integration_replay_index_preflight_paths():
+    psycopg2 = pytest.importorskip("psycopg2")
+
+    import backend.app.db.session as session
+
+    dsn = os.environ["TEST_POSTGRES_DSN"]
+    schema = f"agentascend_test_{uuid.uuid4().hex[:10]}"
+
+    raw_conn = psycopg2.connect(dsn)
+    raw_conn.autocommit = True
+    adapter = session.PostgresConnectionAdapter(raw_conn)
+
+    try:
+        adapter.execute(f"CREATE SCHEMA {schema}")
+        adapter.execute(f"SET search_path TO {schema}")
+        adapter.execute(
+            """
+            CREATE TABLE access_grants (
+                id SERIAL PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                feature_name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                intent_reference TEXT,
+                payment_id INTEGER
+            )
+            """
+        )
+
+        # Duplicate path: should skip both indexes
+        adapter.execute(
+            """
+            INSERT INTO access_grants(user_id, feature_name, status, intent_reference, payment_id)
+            VALUES
+                ('u1', 'random_number', 'active', 'dup-ref', NULL),
+                ('u1', 'random_number', 'active', 'dup-ref', NULL)
+            """
+        )
+        session._create_access_grant_replay_unique_indexes_postgres(adapter)
+        idx_rows = adapter.execute(
+            "SELECT indexname FROM pg_indexes WHERE schemaname = %s AND tablename = 'access_grants'",
+            (schema,),
+        ).fetchall()
+        idx_names = {row["indexname"] for row in idx_rows}
+        assert "idx_access_grants_active_user_feature_intent_unique" not in idx_names
+        assert "idx_access_grants_active_user_feature_payment_unique" not in idx_names
+
+        # Clean path: should create both indexes
+        adapter.execute("TRUNCATE TABLE access_grants")
+        session._create_access_grant_replay_unique_indexes_postgres(adapter)
+        idx_rows = adapter.execute(
+            "SELECT indexname FROM pg_indexes WHERE schemaname = %s AND tablename = 'access_grants'",
+            (schema,),
+        ).fetchall()
+        idx_names = {row["indexname"] for row in idx_rows}
+        assert "idx_access_grants_active_user_feature_intent_unique" in idx_names
+        assert "idx_access_grants_active_user_feature_payment_unique" in idx_names
+    finally:
+        try:
+            adapter.execute("SET search_path TO public")
+            adapter.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+        finally:
+            raw_conn.close()
 
 
 def test_pumpfun_invoice_fields_can_store_official_constants_in_temp_db(fresh_db):
