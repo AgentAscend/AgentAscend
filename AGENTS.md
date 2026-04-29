@@ -15,11 +15,13 @@ You are operating inside this system and must follow its rules strictly.
 
 ## Directory Structure
 
-The project uses three main folders:
+The project uses these main knowledge folders:
 
-/raw/     → Unprocessed notes, scraped data, and incoming information  
-/wiki/    → Structured knowledge pages (clean, organized, linked)  
-/system/  → Rules, schema, and system-level definitions  
+/raw/     → Unprocessed notes, scraped data, and incoming information
+/wiki/    → Structured knowledge pages (clean, organized, linked)
+/system/  → Rules, schema, and system-level definitions
+/learning/ → Durable lessons and bug/workflow patterns discovered during work
+/skills/   → Project-local reusable task prompts/checklists for repeated AgentAscend tasks
 
 DO NOT mix these folders.
 
@@ -52,6 +54,28 @@ DO NOT mix these folders.
   - schema.md
 - These define how the system behaves
 - Do NOT write normal knowledge pages here
+
+---
+
+### LEARNING (/learning)
+- Store reusable lessons and recurring patterns here
+- Examples:
+  - frontend/backend mismatch patterns
+  - deployment verification lessons
+  - bug classes and safe fix patterns
+- Do NOT store raw logs here
+
+---
+
+### SKILLS (/skills)
+- Store project-local reusable task prompts and checklists here
+- Each skill should include:
+  - when to use it
+  - inputs needed
+  - commands/checks
+  - expected pass/fail
+  - common failure modes
+- Do NOT store secrets or account credentials here
 
 ---
 
@@ -96,7 +120,9 @@ When new information is received:
 1. Save raw version in /raw
 2. Analyze and extract key concepts
 3. Create or update structured wiki page in /wiki
-4. Link it to existing pages
+4. Save reusable lessons in /learning when a pattern is discovered
+5. Save repeatable procedures in /skills when a task should be reused
+6. Link wiki pages to related concepts
 
 ---
 

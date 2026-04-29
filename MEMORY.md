@@ -22,6 +22,17 @@ AgentAscend is not just a chatbot website. It is intended to become an infrastru
 
 ## 2. Current Project Direction
 
+### Current production snapshot — 2026-04-29
+
+- Execution Ledger/Scheduler Ledger is production-enabled and audited for the approved safe scheduler workload. Held scheduler jobs remain intentionally disabled and require separate scoped audits before enablement.
+- Approved safe scheduler jobs enabled in production: backend health check, integration drift check, wiki consistency check, and TODO/FIXME scan.
+- Held scheduler jobs disabled in production: payment route audit, failed payment/replay review, access grant integrity check, Telegram status summary, task queue worker, git status summary, and roadmap review.
+- Pump.fun/tokenized-agent payment routes are live and auth-gated: `POST /payments/pumpfun/create` and `POST /payments/pumpfun/verify`.
+- Live v0 frontend paid routes use the Pump.fun modal flow and production CSP allows SolanaTracker browser RPC over both `https://rpc.solanatracker.io` and `wss://rpc.solanatracker.io`.
+- Owner-reported canary: marketplace purchase completed, buyer ownership/unlock worked, creator dashboard accounting updated, and creator claim payout was received. Archive public transaction/sanitized evidence before using this as final launch proof.
+- Pump.fun roles: Agent Deposit/payment address is `G3yF27myX5WdtAihoKEWtuSPxMBQYqxCMSsJaSEcBx2S`; creator/payment authority wallet is `DTC729KJNSuCqGgFUYyYEPQAaiajFMvSerrAmyn84K6D`; buyback/burn is handled by Pump.fun, not AgentAscend code.
+- Critical rule: the Pump.fun payment address alone is not invoice proof; AgentAscend access must require backend-owned invoice/payment-intent verification with exact SDK params and `validateInvoicePayment`.
+
 The current priority is to build a working MVP that proves the core access/payment loop.
 
 The MVP should prove:
@@ -40,7 +51,7 @@ The first gated tool can be simple. The purpose is not the tool itself. The purp
 
 ---
 
-## 3. Core Architecture
+## 3. Core Architecture (Current)
 
 Current local architecture:
 
@@ -48,11 +59,13 @@ AgentAscend/
 - AGENTS.md
 - MEMORY.md
 - backend/
-- frontend/
-- llm-wiki/
-  - raw/
-  - wiki/
-  - system/
+- docs/
+- raw/
+- wiki/
+- system/
+
+Frontend note:
+- `frontend/` is not present in this workspace snapshot; treat frontend integration as contract-based with the deployed v0 app until a repo path is added.
 
 Backend:
 
@@ -73,9 +86,11 @@ Known backend stack:
 
 - FastAPI
 - Uvicorn
-- SQLite for local MVP
+- SQLite for local development/test fixtures
+- Railway Postgres direction for deployed persistence
 - Python backend routes
-- Backend source of truth for payments and access
+- Backend source of truth for payments, access, marketplace data, community data, tasks, and outputs
+- DB-backed scheduler tables for scheduled jobs, job runs, and findings
 
 Known frontend direction:
 
@@ -84,6 +99,8 @@ Known frontend direction:
 - Payment request flow
 - Backend verification flow
 - Gated tool unlock flow
+- Auth/profile wiring
+- Backend-first marketplace, community, tasks, and outputs pages
 
 Local backend:
 
@@ -298,7 +315,7 @@ Hermes helps with:
 - Reading project state
 - Reviewing code
 - Generating reports
-- Maintaining llm-wiki
+- Maintaining project knowledge (`raw/`, `wiki/`, `system/`)
 - Suggesting next steps
 - Running cronjob-style checks
 - Auditing payment/access logic
@@ -497,15 +514,15 @@ Every proposed cronjob should include:
 
 Cronjob proposals should be saved to:
 
-llm-wiki/raw/cronjob-proposals/YYYY-MM-DD-HHMM.md
+raw/cronjob-proposals/YYYY-MM-DD-HHMM.md
 
 Approved cronjobs should be copied to:
 
-llm-wiki/system/cronjobs/approved-cronjobs.md
+system/cronjobs/approved-cronjobs.md
 
 Rejected cronjobs should be logged to:
 
-llm-wiki/raw/cronjob-proposals/rejected/YYYY-MM-DD-HHMM.md
+raw/cronjob-proposals/rejected/YYYY-MM-DD-HHMM.md
 
 ---
 
@@ -596,11 +613,11 @@ Purpose:
 
 ---
 
-## 15. llm-wiki Rules
+## 15. Knowledge Structure Rules
 
-The llm-wiki is AgentAscend’s structured knowledge base.
+The project knowledge base is organized as top-level `raw/`, `wiki/`, and `system/`.
 
-Use llm-wiki/raw/ for:
+Use raw/ for:
 
 - Daily reports
 - Audits
@@ -611,7 +628,7 @@ Use llm-wiki/raw/ for:
 - Raw research
 - Temporary reports
 
-Use llm-wiki/wiki/ for:
+Use wiki/ for:
 
 - Structured durable knowledge
 - Architecture pages
@@ -622,7 +639,7 @@ Use llm-wiki/wiki/ for:
 - Tokenized agent docs
 - ASND utility docs
 
-Use llm-wiki/system/ for:
+Use system/ for:
 
 - Rules
 - Schemas
@@ -656,7 +673,7 @@ Use Obsidian for:
 - Connected idea maps
 - Human navigation
 
-Use llm-wiki for:
+Use project knowledge folders for:
 
 - Agent-readable structured knowledge
 - Reports
@@ -665,25 +682,25 @@ Use llm-wiki for:
 - System instructions
 - Durable machine-readable docs
 
-Obsidian and llm-wiki should stay aligned, but they do not need to duplicate everything.
+Obsidian and project knowledge folders should stay aligned, but they do not need to duplicate everything.
 
 ---
 
-## 17. Current Build Priorities
+## 17. Current Build Priorities (High Signal)
 
 Immediate priorities:
 
-1. Stabilize payments.py.
-2. Finish clean SOL verification.
-3. Preserve replay protection.
-4. Preserve idempotent verification.
-5. Confirm duplicate transaction signatures cannot create duplicate access.
+1. Keep authenticated ownership enforcement on gated tools and prevent regression.
+2. Keep `/payments/verify` bound to create-side payment intent (`reference` + TTL + user binding).
+3. Keep idempotency failure lifecycle safe (release in-progress keys on failed verify paths).
+4. Normalize payment status semantics across modules (`completed` vs `paid`) and docs.
+5. Add/maintain payment-to-access auditability (`payment_id` linkage for grants where applicable).
 6. Keep backend as source of truth for access control.
 7. Confirm users/access endpoints work.
 8. Confirm payments history endpoint works.
-9. Prepare ASND verification path.
+9. Continue ASND verification hardening.
 10. Wire frontend payment flow to backend cleanly.
-11. Add tests around payment/access flows.
+11. Keep payment/access regression tests green.
 12. Keep documentation updated.
 
 Near-term priorities:
@@ -714,7 +731,7 @@ Long-term priorities:
 
 ---
 
-## 18. Important Files
+## 18. Important Files (Current)
 
 Important root files:
 
@@ -728,27 +745,43 @@ Important backend files:
 - backend/app/routes/payments.py
 - backend/app/routes/users.py
 - backend/app/routes/tools.py
+- backend/app/routes/jobs.py
+- backend/app/routes/platform.py
 - backend/app/services/access_service.py
+- backend/app/services/idempotency.py
+- backend/app/services/scheduler_service.py
+- backend/app/services/job_runner.py
+- backend/app/services/runtime_config.py
 - backend/app/db/session.py
+
+Important scheduler/runtime files:
+
+- scripts/run_scheduler.py
+- scripts/job_admin.py
+- docs/scheduler-runtime.md
 
 Important knowledge folders:
 
-- llm-wiki/raw/
-- llm-wiki/wiki/
-- llm-wiki/system/
+- raw/
+- wiki/
+- system/
+- learning/
+- skills/
 
-Important future docs:
+Important future/current docs:
 
-- llm-wiki/wiki/Payment-System.md
-- llm-wiki/wiki/Access-Control.md
-- llm-wiki/wiki/ASND-Token.md
-- llm-wiki/wiki/Revenue-Flywheel.md
-- llm-wiki/wiki/Tokenized-Agents.md
-- llm-wiki/wiki/Tool-System.md
-- llm-wiki/wiki/User-System.md
-- llm-wiki/wiki/Roadmap.md
-- llm-wiki/system/Hermes-Runtime-Rules.md
-- llm-wiki/system/cronjobs/approved-cronjobs.md
+- wiki/Payment-System.md or wiki/payment-system.md
+- wiki/Access-Control.md or wiki/auth.md
+- wiki/ASND-Token.md
+- wiki/Revenue-Flywheel.md
+- wiki/Tokenized-Agents.md
+- wiki/Tool-System.md
+- wiki/User-System.md
+- wiki/roadmap.md
+- system/Hermes-Runtime-Rules.md
+- system/cronjobs/approved-cronjobs.md
+- learning/*.md
+- skills/*.md
 
 ---
 
@@ -885,19 +918,19 @@ AgentAscend is closer to MVP when:
 
 ---
 
-## 24. Launch Blockers
+## 24. Launch Blockers (Current)
 
 Current or likely launch blockers:
 
-- Payment verification not fully hardened
-- ASND verification not yet fully implemented
-- Frontend/backend payment flow may not be fully wired
-- Tests likely missing
-- Database schema may need tightening
-- Error handling may need improvement
-- MVP demo flow may need cleanup
-- Docs may need updating
-- Public messaging must stay accurate
+- Payment verification hardening must stay enforced and regression-tested.
+- ASND verification not yet fully implemented.
+- Frontend/backend payment flow may not be fully wired.
+- Payment/access regression test coverage should keep expanding.
+- Database schema may need tightening (`access_grants` audit linkage).
+- Error handling/observability may need improvement.
+- MVP demo flow may need cleanup.
+- Docs may need updating.
+- Public messaging must stay accurate.
 
 ---
 
@@ -918,9 +951,9 @@ Do not add:
 - Temporary debugging noise
 - Unverified assumptions as facts
 
-Keep this file concise enough to read quickly.
+Keep this file concise enough to read quickly (target ~250 lines; move detailed procedures to wiki/system docs).
 
-If a section grows too long, move details into llm-wiki/wiki/ and link or reference the wiki page from here.
+If a section grows too long, move details into /wiki and link or reference the wiki page from here.
 
 MEMORY.md should answer:
 
