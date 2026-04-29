@@ -2,10 +2,11 @@ import logging
 import os
 import re
 import sqlite3
+import time
 import uuid
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from backend.app.db.session import get_connection
 from backend.app.providers.solana_rpc import fetch_transaction, received_lamports_for_wallet
@@ -20,7 +21,8 @@ from backend.app.schemas.payments import (
     PaymentVerifyResponse,
 )
 from backend.app.services.access_service import FEATURE_RANDOM_NUMBER, grant_access
-from backend.app.services.idempotency import check_or_begin, finalize
+from backend.app.services.auth_service import require_user_access
+from backend.app.services.idempotency import check_or_begin, finalize, release_in_progress
 from backend.app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter()
@@ -97,6 +99,50 @@ def _payment_reference(user_id: str, token: str) -> str:
     return f"{user_id}:{token}:{os.urandom(8).hex()}"
 
 
+def _store_payment_intent(user_id: str, token: str, reference: str, ttl_seconds: int) -> None:
+    expires_at_epoch = int(time.time()) + ttl_seconds
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO payment_intents(reference, user_id, token, expires_at_epoch)
+            VALUES (?, ?, ?, ?)
+            """,
+            (reference, user_id, token, expires_at_epoch),
+        )
+        conn.commit()
+
+
+def _require_valid_payment_intent(user_id: str, token: str, reference: str) -> None:
+    now_epoch = int(time.time())
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT expires_at_epoch, consumed_at
+            FROM payment_intents
+            WHERE reference = ? AND user_id = ? AND token = ?
+            """,
+            (reference, user_id, token),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=400, detail="Invalid payment reference")
+
+    if row["consumed_at"]:
+        raise HTTPException(status_code=400, detail="Payment reference already used")
+
+    if int(row["expires_at_epoch"]) < now_epoch:
+        raise HTTPException(status_code=400, detail="Payment reference expired")
+
+
+def _consume_payment_intent(reference: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE payment_intents SET consumed_at = CURRENT_TIMESTAMP WHERE reference = ?",
+            (reference,),
+        )
+        conn.commit()
+
+
 @router.post("/payments/create", response_model=PaymentCreateResponse)
 def create_payment(payload: PaymentCreateRequest):
     enforce_rate_limit("payments.create", payload.user_id, limit=60, window_seconds=300)
@@ -108,6 +154,7 @@ def create_payment(payload: PaymentCreateRequest):
 
     ttl_seconds = _payment_ttl_seconds()
     reference = _payment_reference(payload.user_id, selected_token)
+    _store_payment_intent(payload.user_id, selected_token, reference, ttl_seconds)
 
     if selected_token == "SOL":
         sol_price_lamports = _sol_price_lamports()
@@ -142,7 +189,8 @@ def create_payment(payload: PaymentCreateRequest):
 
 
 @router.post("/payments/verify", response_model=PaymentVerifyResponse)
-def verify_payment(payload: PaymentVerifyRequest):
+def verify_payment(payload: PaymentVerifyRequest, authorization: str | None = Header(default=None)):
+    require_user_access(payload.user_id, authorization)
     enforce_rate_limit("payments.verify", payload.user_id, limit=60, window_seconds=300)
     selected_token = _normalize_token(payload.token)
     _validate_signature_format(payload.tx_signature)
@@ -156,102 +204,110 @@ def verify_payment(payload: PaymentVerifyRequest):
             "user_id": payload.user_id,
             "tx_signature": payload.tx_signature,
             "token": selected_token,
+            "reference": payload.reference,
         },
     )
     if replay:
         return replay["payload"]
 
-    tx_result = fetch_transaction(payload.tx_signature)
-    if not tx_result:
-        raise HTTPException(status_code=400, detail="Transaction not found or not confirmed")
+    try:
+        _require_valid_payment_intent(payload.user_id, selected_token, payload.reference)
 
-    meta = tx_result.get("meta")
-    if not meta:
-        raise HTTPException(status_code=400, detail="Transaction metadata missing")
+        tx_result = fetch_transaction(payload.tx_signature)
+        if not tx_result:
+            raise HTTPException(status_code=400, detail="Transaction not found or not confirmed")
 
-    if meta.get("err") is not None:
-        raise HTTPException(status_code=400, detail="Transaction failed on-chain")
+        meta = tx_result.get("meta")
+        if not meta:
+            raise HTTPException(status_code=400, detail="Transaction metadata missing")
 
-    payment_details = {}
+        if meta.get("err") is not None:
+            raise HTTPException(status_code=400, detail="Transaction failed on-chain")
 
-    if selected_token == "SOL":
-        receiver_wallet = os.getenv("SOLANA_RECEIVER_WALLET")
-        if not receiver_wallet:
-            raise HTTPException(status_code=500, detail="SOLANA_RECEIVER_WALLET is not set")
+        payment_details = {}
 
-        sol_price_lamports = _sol_price_lamports()
-        received_lamports = received_lamports_for_wallet(tx_result, receiver_wallet)
-        if received_lamports < sol_price_lamports:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Insufficient payment: expected at least {sol_price_lamports} lamports, "
-                    f"received {received_lamports}"
-                ),
+        if selected_token == "SOL":
+            receiver_wallet = os.getenv("SOLANA_RECEIVER_WALLET")
+            if not receiver_wallet:
+                raise HTTPException(status_code=500, detail="SOLANA_RECEIVER_WALLET is not set")
+
+            sol_price_lamports = _sol_price_lamports()
+            received_lamports = received_lamports_for_wallet(tx_result, receiver_wallet)
+            if received_lamports < sol_price_lamports:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Insufficient payment: expected at least {sol_price_lamports} lamports, "
+                        f"received {received_lamports}"
+                    ),
+                )
+
+            amount = sol_price_lamports / 1_000_000_000
+            payment_details["received_lamports"] = received_lamports
+        else:
+            receiver_wallet = os.getenv("SOLANA_RECEIVER_WALLET")
+            if not receiver_wallet:
+                raise HTTPException(status_code=500, detail="SOLANA_RECEIVER_WALLET is not set")
+
+            mint_address = os.getenv("ASND_MINT_ADDRESS")
+            if not mint_address:
+                raise HTTPException(status_code=500, detail="ASND_MINT_ADDRESS is not set")
+
+            asnd_price_tokens = _asnd_price_tokens()
+            receiver_token_account = get_receiver_token_account(receiver_wallet, mint_address)
+            received_amount = received_token_amount_for_wallet(
+                tx_result,
+                receiver_token_account,
+                mint_address,
             )
 
-        amount = sol_price_lamports / 1_000_000_000
-        payment_details["received_lamports"] = received_lamports
-    else:
-        receiver_wallet = os.getenv("SOLANA_RECEIVER_WALLET")
-        if not receiver_wallet:
-            raise HTTPException(status_code=500, detail="SOLANA_RECEIVER_WALLET is not set")
+            if received_amount < asnd_price_tokens:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Insufficient ASND payment: expected at least {asnd_price_tokens}, "
+                        f"received {received_amount}"
+                    ),
+                )
 
-        mint_address = os.getenv("ASND_MINT_ADDRESS")
-        if not mint_address:
-            raise HTTPException(status_code=500, detail="ASND_MINT_ADDRESS is not set")
+            amount = float(received_amount)
+            payment_details["received_amount"] = str(received_amount)
+            payment_details["receiver_token_account"] = receiver_token_account
 
-        asnd_price_tokens = _asnd_price_tokens()
-        receiver_token_account = get_receiver_token_account(receiver_wallet, mint_address)
-        received_amount = received_token_amount_for_wallet(
-            tx_result,
-            receiver_token_account,
-            mint_address,
-        )
-
-        if received_amount < asnd_price_tokens:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Insufficient ASND payment: expected at least {asnd_price_tokens}, "
-                    f"received {received_amount}"
-                ),
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
+                (payload.user_id,),
             )
 
-        amount = float(received_amount)
-        payment_details["received_amount"] = str(received_amount)
-        payment_details["receiver_token_account"] = receiver_token_account
+            try:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO payments (user_id, amount, token, status, tx_signature)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (payload.user_id, amount, selected_token, "completed", payload.tx_signature),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise HTTPException(status_code=400, detail="Transaction signature already used") from exc
 
-    with get_connection() as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
-            (payload.user_id,),
-        )
+            payment_id = cursor.lastrowid
+            conn.commit()
 
-        try:
-            cursor = conn.execute(
-                """
-                INSERT INTO payments (user_id, amount, token, status, tx_signature)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (payload.user_id, amount, selected_token, "completed", payload.tx_signature),
-            )
-        except sqlite3.IntegrityError as exc:
-            raise HTTPException(status_code=400, detail="Transaction signature already used") from exc
+        grant_access(payload.user_id, FEATURE_RANDOM_NUMBER)
+        _consume_payment_intent(payload.reference)
 
-        payment_id = cursor.lastrowid
-        conn.commit()
-
-    grant_access(payload.user_id, FEATURE_RANDOM_NUMBER)
-
-    response_payload = {
-        "status": "payment_verified",
-        "user_id": payload.user_id,
-        "payment_id": payment_id,
-        "tx_signature": payload.tx_signature,
-        "token": selected_token,
-        **payment_details,
-    }
-    finalize(scope, idempotency_key, response_payload)
-    logger.info("payment_verified_success user_id=%s token=%s", payload.user_id, selected_token)
-    return response_payload
+        response_payload = {
+            "status": "payment_verified",
+            "user_id": payload.user_id,
+            "payment_id": payment_id,
+            "tx_signature": payload.tx_signature,
+            "token": selected_token,
+            **payment_details,
+        }
+        finalize(scope, idempotency_key, response_payload)
+        logger.info("payment_verified_success user_id=%s token=%s", payload.user_id, selected_token)
+        return response_payload
+    except Exception:
+        release_in_progress(scope, idempotency_key)
+        raise

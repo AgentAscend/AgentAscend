@@ -72,3 +72,16 @@ def finalize(scope: str, idempotency_key: str, response_payload: dict[str, Any],
             (json.dumps(response_payload, sort_keys=True), status_code, scope, idempotency_key),
         )
         conn.commit()
+
+
+def release_in_progress(scope: str, idempotency_key: str) -> None:
+    """Release an in-progress idempotency lock when a request fails before finalize()."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            DELETE FROM idempotency_records
+            WHERE operation_scope = ? AND idempotency_key = ? AND response_json IS NULL
+            """,
+            (scope, idempotency_key),
+        )
+        conn.commit()
