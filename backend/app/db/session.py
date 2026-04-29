@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import sqlite3
 from datetime import UTC, datetime, timedelta
@@ -13,6 +14,18 @@ def _default_db_path() -> Path:
 
 
 DB_PATH = _default_db_path()
+logger = logging.getLogger(__name__)
+
+ACCESS_GRANTS_ACTIVE_INTENT_UNIQUE_INDEX_SQL = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_access_grants_active_user_feature_intent_unique "
+    "ON access_grants(user_id, feature_name, intent_reference) "
+    "WHERE status = 'active' AND intent_reference IS NOT NULL"
+)
+ACCESS_GRANTS_ACTIVE_PAYMENT_UNIQUE_INDEX_SQL = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_access_grants_active_user_feature_payment_unique "
+    "ON access_grants(user_id, feature_name, payment_id) "
+    "WHERE status = 'active' AND payment_id IS NOT NULL"
+)
 
 
 def utc_now_iso() -> str:
@@ -451,7 +464,21 @@ def get_connection():
     return conn
 
 
-def _create_access_grant_replay_unique_indexes_sqlite(conn: sqlite3.Connection) -> None:
+def _rows_to_dicts(rows) -> list[dict]:
+    mapped = []
+    for row in rows:
+        if isinstance(row, dict):
+            mapped.append(dict(row))
+            continue
+        keys = getattr(row, "keys", None)
+        if callable(keys):
+            mapped.append({k: row[k] for k in keys()})
+            continue
+        mapped.append({"row": str(row)})
+    return mapped
+
+
+def _access_grant_duplicate_samples(conn) -> tuple[list, list]:
     duplicate_intent_rows = conn.execute(
         """
         SELECT user_id, feature_name, intent_reference, COUNT(*) AS duplicate_count
@@ -472,31 +499,40 @@ def _create_access_grant_replay_unique_indexes_sqlite(conn: sqlite3.Connection) 
         LIMIT 5
         """
     ).fetchall()
+    return duplicate_intent_rows, duplicate_payment_rows
+
+
+def _create_access_grant_replay_unique_indexes_sqlite(conn: sqlite3.Connection) -> None:
+    duplicate_intent_rows, duplicate_payment_rows = _access_grant_duplicate_samples(conn)
 
     if duplicate_intent_rows or duplicate_payment_rows:
-        print(
-            "[db] Skipping access_grants replay unique indexes due to existing duplicate active grants",
-            {
-                "duplicate_intent_rows": [dict(row) for row in duplicate_intent_rows],
-                "duplicate_payment_rows": [dict(row) for row in duplicate_payment_rows],
+        logger.warning(
+            "Skipping sqlite access_grants replay unique indexes due to existing duplicate active grants",
+            extra={
+                "duplicate_intent_rows": _rows_to_dicts(duplicate_intent_rows),
+                "duplicate_payment_rows": _rows_to_dicts(duplicate_payment_rows),
             },
         )
         return
 
-    conn.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_access_grants_active_user_feature_intent_unique
-        ON access_grants(user_id, feature_name, intent_reference)
-        WHERE status = 'active' AND intent_reference IS NOT NULL
-        """
-    )
-    conn.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_access_grants_active_user_feature_payment_unique
-        ON access_grants(user_id, feature_name, payment_id)
-        WHERE status = 'active' AND payment_id IS NOT NULL
-        """
-    )
+    conn.execute(ACCESS_GRANTS_ACTIVE_INTENT_UNIQUE_INDEX_SQL)
+    conn.execute(ACCESS_GRANTS_ACTIVE_PAYMENT_UNIQUE_INDEX_SQL)
+
+
+def _create_access_grant_replay_unique_indexes_postgres(conn) -> None:
+    duplicate_intent_rows, duplicate_payment_rows = _access_grant_duplicate_samples(conn)
+    if duplicate_intent_rows or duplicate_payment_rows:
+        logger.warning(
+            "Skipping postgres access_grants replay unique indexes due to existing duplicate active grants",
+            extra={
+                "duplicate_intent_rows": _rows_to_dicts(duplicate_intent_rows),
+                "duplicate_payment_rows": _rows_to_dicts(duplicate_payment_rows),
+            },
+        )
+        return
+
+    conn.execute(ACCESS_GRANTS_ACTIVE_INTENT_UNIQUE_INDEX_SQL)
+    conn.execute(ACCESS_GRANTS_ACTIVE_PAYMENT_UNIQUE_INDEX_SQL)
 
 
 def _init_sqlite_db():
@@ -1761,8 +1797,6 @@ _POSTGRES_INDEX_DDL = [
     "CREATE INDEX IF NOT EXISTS idx_access_grants_user_scope_status ON access_grants(user_id, grant_scope, status)",
     "CREATE INDEX IF NOT EXISTS idx_access_grants_payment_id ON access_grants(payment_id)",
     "CREATE INDEX IF NOT EXISTS idx_access_grants_intent_reference ON access_grants(intent_reference)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_access_grants_active_user_feature_intent_unique ON access_grants(user_id, feature_name, intent_reference) WHERE status = 'active' AND intent_reference IS NOT NULL",
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_access_grants_active_user_feature_payment_unique ON access_grants(user_id, feature_name, payment_id) WHERE status = 'active' AND payment_id IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next_run ON scheduled_jobs(enabled, next_run_at)",
     "CREATE INDEX IF NOT EXISTS idx_job_runs_job_started ON job_runs(scheduled_job_id, started_at)",
     "CREATE INDEX IF NOT EXISTS idx_agent_findings_source ON agent_findings(source_job_id)",
@@ -1888,6 +1922,7 @@ def _init_postgres_db():
         conn.execute("UPDATE community_posts SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL")
         for ddl in _POSTGRES_INDEX_DDL:
             conn.execute(ddl)
+        _create_access_grant_replay_unique_indexes_postgres(conn)
         _seed_default_scheduled_jobs(conn)
         _remove_legacy_demo_rows(conn)
         conn.commit()

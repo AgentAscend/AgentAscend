@@ -309,6 +309,52 @@ def test_migration_skips_replay_unique_indexes_when_duplicate_active_grants_exis
         assert ("user_id", "feature_name", "payment_id") not in unique_columns
 
 
+def test_postgres_preflight_skips_replay_unique_indexes_when_duplicates_exist(monkeypatch):
+    import backend.app.db.session as session
+
+    executed_sql = []
+
+    class FakeConn:
+        def execute(self, sql, params=None):
+            executed_sql.append(sql)
+            class _Cursor:
+                def fetchall(self_inner):
+                    return []
+            return _Cursor()
+
+    monkeypatch.setattr(
+        session,
+        "_access_grant_duplicate_samples",
+        lambda _conn: ([{"user_id": "u", "feature_name": "f", "intent_reference": "r", "duplicate_count": 2}], []),
+    )
+
+    session._create_access_grant_replay_unique_indexes_postgres(FakeConn())
+
+    assert session.ACCESS_GRANTS_ACTIVE_INTENT_UNIQUE_INDEX_SQL not in executed_sql
+    assert session.ACCESS_GRANTS_ACTIVE_PAYMENT_UNIQUE_INDEX_SQL not in executed_sql
+
+
+def test_postgres_preflight_creates_replay_unique_indexes_when_no_duplicates(monkeypatch):
+    import backend.app.db.session as session
+
+    executed_sql = []
+
+    class FakeConn:
+        def execute(self, sql, params=None):
+            executed_sql.append(sql)
+            class _Cursor:
+                def fetchall(self_inner):
+                    return []
+            return _Cursor()
+
+    monkeypatch.setattr(session, "_access_grant_duplicate_samples", lambda _conn: ([], []))
+
+    session._create_access_grant_replay_unique_indexes_postgres(FakeConn())
+
+    assert session.ACCESS_GRANTS_ACTIVE_INTENT_UNIQUE_INDEX_SQL in executed_sql
+    assert session.ACCESS_GRANTS_ACTIVE_PAYMENT_UNIQUE_INDEX_SQL in executed_sql
+
+
 def test_pumpfun_invoice_fields_can_store_official_constants_in_temp_db(fresh_db):
     fresh_db.execute(
         """

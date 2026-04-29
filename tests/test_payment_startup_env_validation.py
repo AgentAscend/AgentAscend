@@ -40,3 +40,24 @@ def test_payment_startup_env_validation_fails_closed_in_production(monkeypatch):
         payment_config.validate_payment_startup_env()
     assert exc_info.value.status_code == 500
     assert "is not set" in str(exc_info.value.detail)
+
+
+def test_lifespan_startup_runs_validation_before_db_init(monkeypatch):
+    call_order = []
+
+    import backend.app.services.payment_config as payment_config
+    import backend.app.db.session as session
+
+    monkeypatch.setattr(payment_config, "validate_payment_startup_env", lambda: call_order.append("validate"))
+    monkeypatch.setattr(session, "init_db", lambda: call_order.append("init_db"))
+
+    import backend.app.main as main
+
+    importlib.reload(main)
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(main.app):
+        pass
+
+    assert call_order == ["validate", "init_db"]

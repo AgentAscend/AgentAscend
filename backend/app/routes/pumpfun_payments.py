@@ -15,6 +15,17 @@ from backend.app.services.access_service import FEATURE_RANDOM_NUMBER
 from backend.app.services.auth_service import require_user_access
 from backend.app.services.error_response import fail
 from backend.app.services.payment_config import required_positive_int_env
+from backend.app.services.payment_error_codes import (
+    PAYMENT_CONFIG_ERROR,
+    PAYMENT_HELPER_ERROR,
+    PAYMENT_INTENT_CONSUMED,
+    PAYMENT_INTENT_EXPIRED,
+    PAYMENT_INTENT_INVALID,
+    PAYMENT_NOT_VERIFIED,
+    PAYMENT_RECORD_ERROR,
+    TRANSACTION_SIGNATURE_USED,
+    VALIDATION_ERROR,
+)
 from backend.app.services.rate_limit import enforce_rate_limit
 
 router = APIRouter()
@@ -74,9 +85,9 @@ def _optional_positive_int_env(name: str, default: int) -> int:
     try:
         value = int(raw)
     except ValueError:
-        fail(500, "payment_config_error", f"{name} must be an integer")
+        fail(500, PAYMENT_CONFIG_ERROR, f"{name} must be an integer")
     if value <= 0:
-        fail(500, "payment_config_error", f"{name} must be greater than zero")
+        fail(500, PAYMENT_CONFIG_ERROR, f"{name} must be greater than zero")
     return value
 
 
@@ -95,20 +106,20 @@ def _amount_smallest_unit() -> int:
     try:
         return required_positive_int_env("PRICE_AMOUNT_SMALLEST_UNIT")
     except Exception as exc:
-        fail(500, "payment_config_error", str(getattr(exc, "detail", "PRICE_AMOUNT_SMALLEST_UNIT is not configured")))
+        fail(500, PAYMENT_CONFIG_ERROR, str(getattr(exc, "detail", "PRICE_AMOUNT_SMALLEST_UNIT is not configured")))
 
 
 def _agent_token_mint() -> str:
     value = (os.getenv("AGENT_TOKEN_MINT_ADDRESS") or "").strip()
     if not value:
-        fail(500, "payment_config_error", "AGENT_TOKEN_MINT_ADDRESS is not configured")
+        fail(500, PAYMENT_CONFIG_ERROR, "AGENT_TOKEN_MINT_ADDRESS is not configured")
     return value
 
 
 def _currency_mint() -> str:
     value = (os.getenv("CURRENCY_MINT") or "").strip()
     if not value:
-        fail(500, "payment_config_error", "CURRENCY_MINT is not configured")
+        fail(500, PAYMENT_CONFIG_ERROR, "CURRENCY_MINT is not configured")
     return value
 
 
@@ -123,7 +134,7 @@ def _new_memo() -> int:
 
 def _validate_signature_format(tx_signature: str) -> None:
     if not _SIGNATURE_PATTERN.match((tx_signature or "").strip()):
-        fail(400, "validation_error", "Invalid transaction signature format")
+        fail(400, VALIDATION_ERROR, "Invalid transaction signature format")
 
 
 def _require_unused_tx_signature(tx_signature: str) -> None:
@@ -133,11 +144,11 @@ def _require_unused_tx_signature(tx_signature: str) -> None:
             (tx_signature,),
         ).fetchone()
     if row is not None:
-        fail(400, "transaction_signature_used", "Transaction signature already used")
+        fail(400, TRANSACTION_SIGNATURE_USED, "Transaction signature already used")
 
 
 def _safe_helper_error(status_code: int = 400) -> None:
-    fail(status_code, "payment_helper_error", "Payment helper failed")
+    fail(status_code, PAYMENT_HELPER_ERROR, "Payment helper failed")
 
 
 def _build_helper_payload(*, user_wallet: str, agent_token_mint: str, currency_mint: str, amount: int, memo: int, start_time: int, end_time: int) -> dict:
@@ -209,13 +220,13 @@ def _load_pending_intent(reference: str, user_id: str):
             (reference, user_id, "SOL"),
         ).fetchone()
     if row is None:
-        fail(400, "payment_intent_invalid", "Invalid payment reference")
+        fail(400, PAYMENT_INTENT_INVALID, "Invalid payment reference")
     if row["status"] == "completed":
-        fail(400, "payment_intent_consumed", "Payment reference already completed")
+        fail(400, PAYMENT_INTENT_CONSUMED, "Payment reference already completed")
     if row["status"] != "pending":
-        fail(400, "payment_intent_invalid", "Payment reference is not pending")
+        fail(400, PAYMENT_INTENT_INVALID, "Payment reference is not pending")
     if int(row["end_time"] or row["expires_at_epoch"] or 0) < int(time.time()):
-        fail(400, "payment_intent_expired", "Payment reference expired")
+        fail(400, PAYMENT_INTENT_EXPIRED, "Payment reference expired")
     return row
 
 
@@ -272,7 +283,7 @@ def _record_verified_payment_and_access(*, row, tx_signature: str, invoice_id: s
                 ),
             )
         except sqlite3.IntegrityError:
-            fail(400, "transaction_signature_used", "Transaction signature already used")
+            fail(400, TRANSACTION_SIGNATURE_USED, "Transaction signature already used")
         payment_id = getattr(cursor, "lastrowid", None)
         if payment_id is None:
             payment_row = conn.execute(
@@ -280,7 +291,7 @@ def _record_verified_payment_and_access(*, row, tx_signature: str, invoice_id: s
                 (tx_signature,),
             ).fetchone()
             if payment_row is None:
-                fail(500, "payment_record_error", "Payment record could not be confirmed")
+                fail(500, PAYMENT_RECORD_ERROR, "Payment record could not be confirmed")
             payment_id = payment_row["id"]
         conn.execute(
             """
@@ -388,7 +399,7 @@ def verify_pumpfun_payment(payload: PumpfunVerifyRequest, authorization: str | N
     if not helper_result.get("ok"):
         _safe_helper_error()
     if not helper_result.get("verified"):
-        fail(400, "payment_not_verified", "Payment was not verified")
+        fail(400, PAYMENT_NOT_VERIFIED, "Payment was not verified")
 
     invoice_id = helper_result.get("invoiceId") or row["invoice_id"]
     payment_id = _record_verified_payment_and_access(

@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +9,15 @@ from backend.app.db.session import init_db
 from backend.app.routes import auth, creator, health, jobs, marketplace, payments, platform, pumpfun_payments, telegram, tools, users
 from backend.app.services.payment_config import validate_payment_startup_env
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    validate_payment_startup_env()
+    init_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 def _cors_allowed_origins() -> list[str]:
@@ -75,12 +84,6 @@ def http_exception_handler(_request: Request, exc: HTTPException):
             "message": message,
         }
     return JSONResponse(status_code=exc.status_code, content={"error": payload})
-
-
-@app.on_event("startup")
-def startup():
-    validate_payment_startup_env()
-    init_db()
 
 
 app.include_router(auth.router)
