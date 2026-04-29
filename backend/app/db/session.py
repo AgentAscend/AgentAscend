@@ -451,6 +451,54 @@ def get_connection():
     return conn
 
 
+def _create_access_grant_replay_unique_indexes_sqlite(conn: sqlite3.Connection) -> None:
+    duplicate_intent_rows = conn.execute(
+        """
+        SELECT user_id, feature_name, intent_reference, COUNT(*) AS duplicate_count
+        FROM access_grants
+        WHERE status = 'active' AND intent_reference IS NOT NULL
+        GROUP BY user_id, feature_name, intent_reference
+        HAVING COUNT(*) > 1
+        LIMIT 5
+        """
+    ).fetchall()
+    duplicate_payment_rows = conn.execute(
+        """
+        SELECT user_id, feature_name, payment_id, COUNT(*) AS duplicate_count
+        FROM access_grants
+        WHERE status = 'active' AND payment_id IS NOT NULL
+        GROUP BY user_id, feature_name, payment_id
+        HAVING COUNT(*) > 1
+        LIMIT 5
+        """
+    ).fetchall()
+
+    if duplicate_intent_rows or duplicate_payment_rows:
+        print(
+            "[db] Skipping access_grants replay unique indexes due to existing duplicate active grants",
+            {
+                "duplicate_intent_rows": [dict(row) for row in duplicate_intent_rows],
+                "duplicate_payment_rows": [dict(row) for row in duplicate_payment_rows],
+            },
+        )
+        return
+
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_access_grants_active_user_feature_intent_unique
+        ON access_grants(user_id, feature_name, intent_reference)
+        WHERE status = 'active' AND intent_reference IS NOT NULL
+        """
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_access_grants_active_user_feature_payment_unique
+        ON access_grants(user_id, feature_name, payment_id)
+        WHERE status = 'active' AND payment_id IS NOT NULL
+        """
+    )
+
+
 def _init_sqlite_db():
     with get_connection() as conn:
         conn.execute(
@@ -639,6 +687,7 @@ def _init_sqlite_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_access_grants_user_scope_status ON access_grants(user_id, grant_scope, status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_access_grants_payment_id ON access_grants(payment_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_access_grants_intent_reference ON access_grants(intent_reference)")
+        _create_access_grant_replay_unique_indexes_sqlite(conn)
 
         conn.execute(
             """
@@ -1712,6 +1761,8 @@ _POSTGRES_INDEX_DDL = [
     "CREATE INDEX IF NOT EXISTS idx_access_grants_user_scope_status ON access_grants(user_id, grant_scope, status)",
     "CREATE INDEX IF NOT EXISTS idx_access_grants_payment_id ON access_grants(payment_id)",
     "CREATE INDEX IF NOT EXISTS idx_access_grants_intent_reference ON access_grants(intent_reference)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_access_grants_active_user_feature_intent_unique ON access_grants(user_id, feature_name, intent_reference) WHERE status = 'active' AND intent_reference IS NOT NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_access_grants_active_user_feature_payment_unique ON access_grants(user_id, feature_name, payment_id) WHERE status = 'active' AND payment_id IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next_run ON scheduled_jobs(enabled, next_run_at)",
     "CREATE INDEX IF NOT EXISTS idx_job_runs_job_started ON job_runs(scheduled_job_id, started_at)",
     "CREATE INDEX IF NOT EXISTS idx_agent_findings_source ON agent_findings(source_job_id)",

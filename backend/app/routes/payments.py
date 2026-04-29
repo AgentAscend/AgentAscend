@@ -23,6 +23,7 @@ from backend.app.schemas.payments import (
 from backend.app.services.access_service import FEATURE_RANDOM_NUMBER, grant_access
 from backend.app.services.payment_config import sol_price_lamports as get_sol_price_lamports
 from backend.app.services.auth_service import require_user_access
+from backend.app.services.error_response import fail
 from backend.app.services.idempotency import check_or_begin, finalize, release_in_progress
 from backend.app.services.rate_limit import enforce_rate_limit
 
@@ -45,7 +46,7 @@ def _normalize_token(token: str) -> str:
 
 def _validate_signature_format(tx_signature: str) -> None:
     if not _SIGNATURE_PATTERN.match((tx_signature or "").strip()):
-        raise HTTPException(status_code=400, detail="Invalid transaction signature format")
+        fail(400, "validation_error", "Invalid transaction signature format")
 
 
 def _sol_price_lamports() -> int:
@@ -114,13 +115,13 @@ def _require_valid_payment_intent(user_id: str, token: str, reference: str) -> N
         ).fetchone()
 
     if row is None:
-        raise HTTPException(status_code=400, detail="Invalid payment reference")
+        fail(400, "payment_intent_invalid", "Invalid payment reference")
 
     if row["consumed_at"]:
-        raise HTTPException(status_code=400, detail="Payment reference already used")
+        fail(400, "payment_intent_consumed", "Payment reference already used")
 
     if int(row["expires_at_epoch"]) < now_epoch:
-        raise HTTPException(status_code=400, detail="Payment reference expired")
+        fail(400, "payment_intent_expired", "Payment reference expired")
 
 
 def _consume_payment_intent(reference: str) -> None:
@@ -139,7 +140,7 @@ def create_payment(payload: PaymentCreateRequest):
 
     receiver_wallet = os.getenv("SOLANA_RECEIVER_WALLET")
     if not receiver_wallet:
-        raise HTTPException(status_code=500, detail="SOLANA_RECEIVER_WALLET is not set")
+        fail(500, "payment_config_error", "SOLANA_RECEIVER_WALLET is not set")
 
     ttl_seconds = _payment_ttl_seconds()
     reference = _payment_reference(payload.user_id, selected_token)
@@ -218,14 +219,15 @@ def verify_payment(payload: PaymentVerifyRequest, authorization: str | None = He
         if selected_token == "SOL":
             receiver_wallet = os.getenv("SOLANA_RECEIVER_WALLET")
             if not receiver_wallet:
-                raise HTTPException(status_code=500, detail="SOLANA_RECEIVER_WALLET is not set")
+                fail(500, "payment_config_error", "SOLANA_RECEIVER_WALLET is not set")
 
             sol_price_lamports = _sol_price_lamports()
             received_lamports = received_lamports_for_wallet(tx_result, receiver_wallet)
             if received_lamports < sol_price_lamports:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
+                fail(
+                    400,
+                    "payment_not_verified",
+                    (
                         f"Insufficient payment: expected at least {sol_price_lamports} lamports, "
                         f"received {received_lamports}"
                     ),
@@ -236,11 +238,11 @@ def verify_payment(payload: PaymentVerifyRequest, authorization: str | None = He
         else:
             receiver_wallet = os.getenv("SOLANA_RECEIVER_WALLET")
             if not receiver_wallet:
-                raise HTTPException(status_code=500, detail="SOLANA_RECEIVER_WALLET is not set")
+                fail(500, "payment_config_error", "SOLANA_RECEIVER_WALLET is not set")
 
             mint_address = os.getenv("ASND_MINT_ADDRESS")
             if not mint_address:
-                raise HTTPException(status_code=500, detail="ASND_MINT_ADDRESS is not set")
+                fail(500, "payment_config_error", "ASND_MINT_ADDRESS is not set")
 
             asnd_price_tokens = _asnd_price_tokens()
             receiver_token_account = get_receiver_token_account(receiver_wallet, mint_address)
@@ -251,9 +253,10 @@ def verify_payment(payload: PaymentVerifyRequest, authorization: str | None = He
             )
 
             if received_amount < asnd_price_tokens:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
+                fail(
+                    400,
+                    "payment_not_verified",
+                    (
                         f"Insufficient ASND payment: expected at least {asnd_price_tokens}, "
                         f"received {received_amount}"
                     ),
@@ -278,7 +281,7 @@ def verify_payment(payload: PaymentVerifyRequest, authorization: str | None = He
                     (payload.user_id, amount, selected_token, "completed", payload.tx_signature),
                 )
             except sqlite3.IntegrityError as exc:
-                raise HTTPException(status_code=400, detail="Transaction signature already used") from exc
+                fail(400, "transaction_signature_used", "Transaction signature already used")
 
             payment_id = cursor.lastrowid
             grant_access(

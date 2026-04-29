@@ -1,5 +1,6 @@
 import importlib
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -74,6 +75,19 @@ def test_pumpfun_create_requires_auth(client: TestClient):
 
     assert response.status_code == 401, response.text
     assert response.json()["error"]["code"] == "unauthorized"
+
+
+def test_pumpfun_create_missing_payment_config_returns_payment_config_error(client: TestClient, monkeypatch):
+    user_id, token = _signup(client, "pumpfun-missing-config@example.com")
+    monkeypatch.delenv("AGENT_TOKEN_MINT_ADDRESS", raising=False)
+
+    response = client.post(
+        "/payments/pumpfun/create",
+        json={"user_id": user_id, "user_wallet": "Wallet111111111111111111111111111111111111"},
+        headers=_auth_header(token),
+    )
+    assert response.status_code == 500, response.text
+    assert response.json()["error"]["code"] == "payment_config_error"
 
 
 def test_pumpfun_create_rejects_rpc_url_input(client: TestClient):
@@ -186,6 +200,28 @@ def test_pumpfun_verify_requires_auth(client: TestClient):
 
     assert response.status_code == 401, response.text
     assert response.json()["error"]["code"] == "unauthorized"
+
+
+def test_pumpfun_verify_malformed_signature_returns_validation_error(client: TestClient, monkeypatch):
+    user_id, token = _signup(client, "pumpfun-malformed@example.com")
+    monkeypatch.setattr(
+        "backend.app.routes.pumpfun_payments.pumpfun_node_helper.build_payment_transaction",
+        lambda _payload: {"ok": True, "txBase64": "unsigned-tx-base64", "invoiceId": "invoice-malformed"},
+    )
+    create_response = client.post(
+        "/payments/pumpfun/create",
+        json={"user_id": user_id, "user_wallet": "Wallet311111111111111111111111111111111111"},
+        headers=_auth_header(token),
+    )
+    assert create_response.status_code == 200, create_response.text
+
+    verify_response = client.post(
+        "/payments/pumpfun/verify",
+        json={"user_id": user_id, "reference": create_response.json()["reference"], "tx_signature": "bad-sig"},
+        headers=_auth_header(token),
+    )
+    assert verify_response.status_code == 400, verify_response.text
+    assert verify_response.json()["error"]["code"] == "validation_error"
 
 
 def test_pumpfun_verify_rejects_cross_user_reference(client: TestClient, monkeypatch):
@@ -417,6 +453,58 @@ def test_pumpfun_verify_expired_intent_does_not_call_helper_or_grant_access(clie
     from backend.app.services.access_service import FEATURE_RANDOM_NUMBER, has_access
 
     assert has_access(user_id, FEATURE_RANDOM_NUMBER) is False
+
+
+def test_pumpfun_verify_concurrent_same_signature_single_success_or_safe_replay(client: TestClient, monkeypatch):
+    user_id, token = _signup(client, "pumpfun-concurrent@example.com")
+    monkeypatch.setattr(
+        "backend.app.routes.pumpfun_payments.pumpfun_node_helper.build_payment_transaction",
+        lambda _payload: {"ok": True, "txBase64": "unsigned-tx-base64", "invoiceId": "invoice-concurrent"},
+    )
+    monkeypatch.setattr(
+        "backend.app.routes.pumpfun_payments.pumpfun_node_helper.validate_invoice_payment",
+        lambda _payload: {"ok": True, "verified": True, "invoiceId": "invoice-concurrent"},
+    )
+
+    create_response = client.post(
+        "/payments/pumpfun/create",
+        json={"user_id": user_id, "user_wallet": "Wallet121212121212121212121212121212121212"},
+        headers=_auth_header(token),
+    )
+    assert create_response.status_code == 200, create_response.text
+
+    payload = {
+        "user_id": user_id,
+        "reference": create_response.json()["reference"],
+        "tx_signature": "C" * 88,
+    }
+
+    def _verify_once():
+        return client.post("/payments/pumpfun/verify", json=payload, headers=_auth_header(token))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda _i: _verify_once(), [0, 1]))
+
+    statuses = sorted(r.status_code for r in responses)
+    assert statuses == [200, 400], [r.text for r in responses]
+
+    error_codes = [r.json().get("error", {}).get("code") for r in responses if r.status_code == 400]
+    assert error_codes[0] in {"transaction_signature_used", "payment_intent_consumed"}
+
+    from backend.app.db.session import get_connection
+
+    with get_connection() as conn:
+        payment_count = conn.execute(
+            "SELECT COUNT(*) FROM payments WHERE tx_signature = ?",
+            ("C" * 88,),
+        ).fetchone()[0]
+        grant_count = conn.execute(
+            "SELECT COUNT(*) FROM access_grants WHERE user_id = ? AND intent_reference = ?",
+            (user_id, payload["reference"]),
+        ).fetchone()[0]
+
+    assert payment_count == 1
+    assert grant_count == 1
 
 
 def test_record_verified_payment_and_access_handles_postgres_cursor_without_lastrowid(client: TestClient, monkeypatch):

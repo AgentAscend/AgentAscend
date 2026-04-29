@@ -82,6 +82,15 @@ def _create_legacy_sol_payment(client: TestClient, user_id: str) -> dict[str, An
     return _assert_status(response, 200)
 
 
+def test_legacy_payments_create_missing_receiver_config_returns_payment_config_error(client: TestClient, monkeypatch):
+    user_id, _token = _signup(client, "create-missing-config@example.com")
+    monkeypatch.delenv("SOLANA_RECEIVER_WALLET", raising=False)
+
+    response = client.post("/payments/create", json={"user_id": user_id, "token": "SOL"})
+    body = _assert_status(response, 500)
+    assert body["error"]["code"] == "payment_config_error"
+
+
 def test_legacy_payments_verify_requires_auth(client: TestClient, monkeypatch):
     user_id, _token = _signup(client, "verify-unauth@example.com")
     _configure_fake_sol_payment(monkeypatch)
@@ -128,6 +137,20 @@ def test_legacy_payments_verify_requires_reference_binding(client: TestClient, m
     _configure_fake_sol_payment(monkeypatch)
     payment = _create_legacy_sol_payment(client, user_id)
 
+    malformed_response = client.post(
+        "/payments/verify",
+        json={
+            "user_id": user_id,
+            "tx_signature": "bad-sig",
+            "token": "SOL",
+            "reference": payment["reference"],
+            "idempotency_key": "idem-reference-malformed",
+        },
+        headers=_auth_header(token),
+    )
+    malformed_body = _assert_status(malformed_response, 400)
+    assert malformed_body["error"]["code"] == "validation_error"
+
     wrong_reference_response = client.post(
         "/payments/verify",
         json={
@@ -139,7 +162,8 @@ def test_legacy_payments_verify_requires_reference_binding(client: TestClient, m
         },
         headers=_auth_header(token),
     )
-    _assert_status(wrong_reference_response, 400)
+    wrong_reference_body = _assert_status(wrong_reference_response, 400)
+    assert wrong_reference_body["error"]["code"] == "payment_intent_invalid"
 
     ok_response = client.post(
         "/payments/verify",
@@ -179,7 +203,8 @@ def test_legacy_payments_verify_failed_idempotency_can_retry_same_key(client: Te
         },
         headers=_auth_header(token),
     )
-    _assert_status(first_response, 400)
+    first_body = _assert_status(first_response, 400)
+    assert first_body["error"]["code"] == "payment_not_verified"
 
     second_response = client.post(
         "/payments/verify",
@@ -225,4 +250,5 @@ def test_legacy_payments_verify_rejects_consumed_reference(client: TestClient, m
         },
         headers=_auth_header(token),
     )
-    _assert_status(second_response, 400)
+    second_body = _assert_status(second_response, 400)
+    assert second_body["error"]["code"] == "payment_intent_consumed"

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sqlite3
 import time
 import uuid
 from typing import Literal
@@ -235,40 +236,43 @@ def _validate_exact_invoice_columns(row) -> None:
 
 def _record_verified_payment_and_access(*, row, tx_signature: str, invoice_id: str | None) -> int:
     with get_connection() as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO payments(
-                user_id, amount, token, status, tx_signature, intent_reference,
-                user_wallet, agent_token_mint, currency_mint, currency_symbol,
-                amount_smallest_unit, memo, start_time, end_time, invoice_id,
-                payer_wallet, chain, amount_expected, amount_received,
-                verification_status, updated_at, verified_at
+        try:
+            cursor = conn.execute(
+                """
+                INSERT INTO payments(
+                    user_id, amount, token, status, tx_signature, intent_reference,
+                    user_wallet, agent_token_mint, currency_mint, currency_symbol,
+                    amount_smallest_unit, memo, start_time, end_time, invoice_id,
+                    payer_wallet, chain, amount_expected, amount_received,
+                    verification_status, updated_at, verified_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                """,
+                (
+                    row["user_id"],
+                    int(row["amount_smallest_unit"]) / 1_000_000_000,
+                    "SOL",
+                    "completed",
+                    tx_signature,
+                    row["reference"],
+                    row["user_wallet"],
+                    row["agent_token_mint"],
+                    row["currency_mint"],
+                    "SOL",
+                    int(row["amount_smallest_unit"]),
+                    int(row["memo"]),
+                    int(row["start_time"]),
+                    int(row["end_time"]),
+                    invoice_id or row["invoice_id"],
+                    row["user_wallet"],
+                    "solana-mainnet",
+                    int(row["amount_smallest_unit"]) / 1_000_000_000,
+                    int(row["amount_smallest_unit"]) / 1_000_000_000,
+                    "verified",
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-            """,
-            (
-                row["user_id"],
-                int(row["amount_smallest_unit"]) / 1_000_000_000,
-                "SOL",
-                "completed",
-                tx_signature,
-                row["reference"],
-                row["user_wallet"],
-                row["agent_token_mint"],
-                row["currency_mint"],
-                "SOL",
-                int(row["amount_smallest_unit"]),
-                int(row["memo"]),
-                int(row["start_time"]),
-                int(row["end_time"]),
-                invoice_id or row["invoice_id"],
-                row["user_wallet"],
-                "solana-mainnet",
-                int(row["amount_smallest_unit"]) / 1_000_000_000,
-                int(row["amount_smallest_unit"]) / 1_000_000_000,
-                "verified",
-            ),
-        )
+        except sqlite3.IntegrityError:
+            fail(400, "transaction_signature_used", "Transaction signature already used")
         payment_id = getattr(cursor, "lastrowid", None)
         if payment_id is None:
             payment_row = conn.execute(

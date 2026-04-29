@@ -13,6 +13,35 @@ def _required_env(name: str) -> str:
     return value
 
 
+def _is_production_env() -> bool:
+    candidates = [
+        os.getenv("AGENTASCEND_ENV"),
+        os.getenv("APP_ENV"),
+        os.getenv("ENVIRONMENT"),
+        os.getenv("RAILWAY_ENVIRONMENT"),
+    ]
+    normalized = {str(v or "").strip().lower() for v in candidates}
+    return any(v in {"prod", "production"} for v in normalized)
+
+
+def validate_payment_startup_env() -> None:
+    if not _is_production_env():
+        return
+
+    required_names = [
+        "SOLANA_RECEIVER_WALLET",
+        "AGENT_TOKEN_MINT_ADDRESS",
+        "CURRENCY_MINT",
+        "PRICE_AMOUNT_SMALLEST_UNIT",
+        "SOL_PRICE_LAMPORTS",
+    ]
+    for name in required_names:
+        _required_env(name)
+
+    required_positive_int_env("PRICE_AMOUNT_SMALLEST_UNIT")
+    required_positive_int_env("SOL_PRICE_LAMPORTS")
+
+
 def sol_price_lamports() -> int:
     raw = os.getenv("SOL_PRICE_LAMPORTS")
     if raw is None or raw.strip() == "":

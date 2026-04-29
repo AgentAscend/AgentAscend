@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from backend.app.db.session import init_db
 from backend.app.routes import auth, creator, health, jobs, marketplace, payments, platform, pumpfun_payments, telegram, tools, users
+from backend.app.services.payment_config import validate_payment_startup_env
 
 app = FastAPI()
 
@@ -78,6 +79,7 @@ def http_exception_handler(_request: Request, exc: HTTPException):
 
 @app.on_event("startup")
 def startup():
+    validate_payment_startup_env()
     init_db()
 
 

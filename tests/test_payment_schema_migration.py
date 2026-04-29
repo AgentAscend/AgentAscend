@@ -1,7 +1,12 @@
 import sqlite3
+import sys
 from pathlib import Path
 
 import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 PUMPFUN_AGENT_TOKEN_MINT = "9jwExoB9h42bNeUyCH8qBJAye3NJGrToiX62DQTEpump"
@@ -69,6 +74,10 @@ ACCESS_GRANT_REQUIRED_COLUMNS = {
     "metadata_json",
 }
 ACCESS_GRANT_INTENT_COLUMNS = {"intent_reference", "payment_intent_id"}
+ACCESS_GRANT_ACTIVE_REPLAY_UNIQUE_INDEXES = {
+    ("user_id", "feature_name", "intent_reference"),
+    ("user_id", "feature_name", "payment_id"),
+}
 
 LEGACY_EXPECTED_COLUMNS = {
     "payment_intents": {"reference", "user_id", "token", "expires_at_epoch", "consumed_at", "created_at"},
@@ -251,6 +260,11 @@ def test_additive_migration_adds_pumpfun_invoice_columns_to_legacy_tables(migrat
     assert ACCESS_GRANT_INTENT_COLUMNS & grant_columns
 
 
+def test_access_grants_replay_unique_indexes_exist_when_no_duplicate_legacy_rows(migrated_legacy_db):
+    unique_columns = _unique_index_columns(migrated_legacy_db, "access_grants")
+    assert ACCESS_GRANT_ACTIVE_REPLAY_UNIQUE_INDEXES <= unique_columns
+
+
 def test_additive_migration_is_idempotent_for_legacy_db(tmp_path, monkeypatch):
     db_path = tmp_path / "idempotent-agentascend.db"
     _build_legacy_db(db_path)
@@ -268,6 +282,31 @@ def test_additive_migration_is_idempotent_for_legacy_db(tmp_path, monkeypatch):
         assert PAYMENT_INTENT_REQUIRED_COLUMNS <= _columns(conn, "payment_intents")
         assert PAYMENT_REQUIRED_COLUMNS <= _columns(conn, "payments")
         assert ACCESS_GRANT_REQUIRED_COLUMNS <= _columns(conn, "access_grants")
+
+
+def test_migration_skips_replay_unique_indexes_when_duplicate_active_grants_exist(tmp_path, monkeypatch):
+    db_path = tmp_path / "duplicate-grants-agentascend.db"
+    _build_legacy_db(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("ALTER TABLE access_grants ADD COLUMN intent_reference TEXT")
+        conn.execute(
+            "UPDATE access_grants SET intent_reference = 'duplicate-ref' WHERE user_id = 'legacy-user' AND feature_name = 'random_number'"
+        )
+        conn.execute(
+            "INSERT INTO access_grants(user_id, feature_name, status, intent_reference) VALUES ('legacy-user', 'random_number', 'active', 'duplicate-ref')"
+        )
+        conn.commit()
+
+    import backend.app.db.session as session
+
+    monkeypatch.setattr(session, "DB_PATH", db_path)
+    session._init_sqlite_db()
+
+    with sqlite3.connect(db_path) as conn:
+        unique_columns = _unique_index_columns(conn, "access_grants")
+        assert ("user_id", "feature_name", "intent_reference") not in unique_columns
+        assert ("user_id", "feature_name", "payment_id") not in unique_columns
 
 
 def test_pumpfun_invoice_fields_can_store_official_constants_in_temp_db(fresh_db):
