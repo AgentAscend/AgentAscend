@@ -59,6 +59,34 @@ def _auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _create_listing(
+    client: TestClient,
+    *,
+    creator_user_id: str,
+    creator_token: str,
+    price_amount: float,
+    pricing_model: str = "one_time",
+    price_token: str = "SOL",
+):
+    response = client.post(
+        "/marketplace/listings",
+        json={
+            "creator_user_id": creator_user_id,
+            "title": f"Listing {price_amount}",
+            "description": "A test marketplace listing",
+            "category": "Development",
+            "pricing_model": pricing_model,
+            "price_amount": price_amount,
+            "price_token": price_token,
+            "status": "queued_review",
+            "tags": ["test"],
+        },
+        headers=_auth_header(creator_token),
+    )
+    assert response.status_code == 200, _safe_response_diag(response)
+    return response.json()["listing"]
+
+
 def _intent_row(reference: str):
     from backend.app.db.session import get_connection
 
@@ -173,6 +201,175 @@ def test_pumpfun_create_builds_unsigned_transaction_and_stores_immutable_invoice
     assert row["status"] == "pending"
     assert row["verification_status"] == "unverified"
     assert row["tx_signature"] is None
+
+
+def test_pumpfun_create_listing_scoped_payment_uses_listing_price_not_env_default(client: TestClient, monkeypatch):
+    creator_id, creator_token = _signup(client, "pumpfun-listing-creator@example.com")
+    buyer_id, buyer_token = _signup(client, "pumpfun-listing-buyer@example.com")
+    listing = _create_listing(
+        client,
+        creator_user_id=creator_id,
+        creator_token=creator_token,
+        price_amount=0.25,
+    )
+    calls = []
+
+    def fake_build_payment_transaction(payload):
+        calls.append(payload)
+        return {"ok": True, "txBase64": "unsigned-listing-tx-base64", "invoiceId": "invoice-listing-025"}
+
+    monkeypatch.setattr(
+        "backend.app.routes.pumpfun_payments.pumpfun_node_helper.build_payment_transaction",
+        fake_build_payment_transaction,
+    )
+
+    response = client.post(
+        "/payments/pumpfun/create",
+        json={
+            "user_id": buyer_id,
+            "user_wallet": "WalletListing111111111111111111111111111111",
+            "listing_id": listing["listing_id"],
+        },
+        headers=_auth_header(buyer_token),
+    )
+
+    assert response.status_code == 200, _safe_response_diag(response)
+    body = response.json()
+    assert body["listing_id"] == listing["listing_id"]
+    assert body["amount"] == 250000000
+    assert body["currencySymbol"] == "SOL"
+    assert calls[0]["amount"] == 250000000
+
+    row = _intent_row(body["reference"])
+    assert row["amount_smallest_unit"] == 250000000
+    assert row["product_id"] == listing["listing_id"]
+    metadata = row["metadata_json"]
+    assert listing["listing_id"] in metadata
+    assert creator_id in metadata
+
+
+def test_pumpfun_create_listing_rejects_browser_supplied_amount_fields(client: TestClient):
+    user_id, token = _signup(client, "pumpfun-listing-extra-amount@example.com")
+
+    response = client.post(
+        "/payments/pumpfun/create",
+        json={
+            "user_id": user_id,
+            "user_wallet": "WalletExtraAmount11111111111111111111111111",
+            "listing_id": "lst_test_extra",
+            "amount": 0.25,
+        },
+        headers=_auth_header(token),
+    )
+    assert response.status_code == 422, _safe_response_diag(response)
+
+    response = client.post(
+        "/payments/pumpfun/create",
+        json={
+            "user_id": user_id,
+            "user_wallet": "WalletExtraPrice111111111111111111111111111",
+            "listing_id": "lst_test_extra",
+            "price_amount": 0.25,
+        },
+        headers=_auth_header(token),
+    )
+    assert response.status_code == 422, _safe_response_diag(response)
+
+
+def test_pumpfun_create_listing_fails_closed_for_nonexistent_or_free_listing(client: TestClient, monkeypatch):
+    creator_id, creator_token = _signup(client, "pumpfun-free-creator@example.com")
+    buyer_id, buyer_token = _signup(client, "pumpfun-free-buyer@example.com")
+    free_listing = _create_listing(
+        client,
+        creator_user_id=creator_id,
+        creator_token=creator_token,
+        price_amount=0,
+        pricing_model="free",
+    )
+    build_calls = []
+    monkeypatch.setattr(
+        "backend.app.routes.pumpfun_payments.pumpfun_node_helper.build_payment_transaction",
+        lambda payload: build_calls.append(payload) or {"ok": True, "txBase64": "should-not-run"},
+    )
+
+    missing_response = client.post(
+        "/payments/pumpfun/create",
+        json={
+            "user_id": buyer_id,
+            "user_wallet": "WalletMissingListing11111111111111111111111",
+            "listing_id": "lst_does_not_exist",
+        },
+        headers=_auth_header(buyer_token),
+    )
+    assert missing_response.status_code == 404, _safe_response_diag(missing_response)
+
+    free_response = client.post(
+        "/payments/pumpfun/create",
+        json={
+            "user_id": buyer_id,
+            "user_wallet": "WalletFreeListing1111111111111111111111111",
+            "listing_id": free_listing["listing_id"],
+        },
+        headers=_auth_header(buyer_token),
+    )
+    assert free_response.status_code == 400, _safe_response_diag(free_response)
+    assert build_calls == []
+
+
+def test_pumpfun_verify_listing_payment_grants_exact_listing_entitlement(client: TestClient, monkeypatch):
+    creator_id, creator_token = _signup(client, "pumpfun-entitlement-creator@example.com")
+    buyer_id, buyer_token = _signup(client, "pumpfun-entitlement-buyer@example.com")
+    listing = _create_listing(
+        client,
+        creator_user_id=creator_id,
+        creator_token=creator_token,
+        price_amount=0.05,
+    )
+    monkeypatch.setattr(
+        "backend.app.routes.pumpfun_payments.pumpfun_node_helper.build_payment_transaction",
+        lambda _payload: {"ok": True, "txBase64": "unsigned-entitlement-tx-base64", "invoiceId": "invoice-listing-005"},
+    )
+    monkeypatch.setattr(
+        "backend.app.routes.pumpfun_payments.pumpfun_node_helper.validate_invoice_payment",
+        lambda _payload: {"ok": True, "verified": True, "invoiceId": "invoice-listing-005"},
+    )
+
+    create_response = client.post(
+        "/payments/pumpfun/create",
+        json={
+            "user_id": buyer_id,
+            "user_wallet": "WalletEntitlement111111111111111111111111",
+            "listing_id": listing["listing_id"],
+        },
+        headers=_auth_header(buyer_token),
+    )
+    assert create_response.status_code == 200, _safe_response_diag(create_response)
+    verify_response = client.post(
+        "/payments/pumpfun/verify",
+        json={"user_id": buyer_id, "reference": create_response.json()["reference"], "tx_signature": "D" * 88},
+        headers=_auth_header(buyer_token),
+    )
+    assert verify_response.status_code == 200, _safe_response_diag(verify_response)
+
+    from backend.app.db.session import get_connection
+
+    with get_connection() as conn:
+        entitlement = conn.execute(
+            "SELECT * FROM marketplace_entitlements WHERE listing_id = ? AND user_id = ?",
+            (listing["listing_id"], buyer_id),
+        ).fetchone()
+        grant = conn.execute(
+            "SELECT * FROM access_grants WHERE user_id = ? AND intent_reference = ?",
+            (buyer_id, create_response.json()["reference"]),
+        ).fetchone()
+        payment = conn.execute(
+            "SELECT * FROM payments WHERE tx_signature = ?",
+            ("D" * 88,),
+        ).fetchone()
+    assert entitlement is not None
+    assert grant["product_id"] == listing["listing_id"]
+    assert grant["grant_scope"] == f"marketplace_listing:{listing['listing_id']}"
+    assert payment["amount_smallest_unit"] == 50000000
 
 
 def test_pumpfun_create_helper_failure_returns_safe_error_without_storing_intent(client: TestClient, monkeypatch):

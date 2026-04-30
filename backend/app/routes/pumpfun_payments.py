@@ -3,6 +3,7 @@ import os
 import re
 import time
 import uuid
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from fastapi import APIRouter, Header
@@ -40,6 +41,7 @@ class PumpfunCreateRequest(BaseModel):
 
     user_id: str = Field(min_length=1)
     user_wallet: str = Field(min_length=1)
+    listing_id: str | None = Field(default=None, min_length=1)
     access_tier: str = Field(default="mvp", min_length=1)
 
 
@@ -54,6 +56,7 @@ class PumpfunCreateResponse(BaseModel):
     currencyMint: str
     currencySymbol: Literal["SOL"] = "SOL"
     amount: int
+    listing_id: str | None = None
     memo: int
     startTime: int
     endTime: int
@@ -107,6 +110,59 @@ def _amount_smallest_unit() -> int:
         return required_positive_int_env("PRICE_AMOUNT_SMALLEST_UNIT")
     except Exception as exc:
         fail(500, PAYMENT_CONFIG_ERROR, str(getattr(exc, "detail", "PRICE_AMOUNT_SMALLEST_UNIT is not configured")))
+
+
+def _price_to_lamports(price_amount) -> int:
+    try:
+        amount = Decimal(str(price_amount))
+    except (InvalidOperation, ValueError):
+        fail(400, VALIDATION_ERROR, "Listing price is invalid")
+    if not amount.is_finite() or amount <= 0:
+        fail(400, VALIDATION_ERROR, "Listing price must be greater than zero")
+    lamports = amount * Decimal("1000000000")
+    if lamports != lamports.to_integral_value():
+        fail(400, VALIDATION_ERROR, "Listing price has too many decimal places")
+    return int(lamports)
+
+
+def _load_listing_payment_context(listing_id: str) -> dict:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT listing_id, creator_user_id, title, pricing_model, price_amount, price_token, status
+            FROM marketplace_listings
+            WHERE listing_id = ?
+            """,
+            (listing_id,),
+        ).fetchone()
+    if row is None:
+        fail(404, "not_found", "Listing not found")
+    if row["status"] != "published":
+        fail(400, VALIDATION_ERROR, "Listing is not published")
+    if row["pricing_model"] != "one_time":
+        fail(400, VALIDATION_ERROR, "Only one-time paid listings are supported for Pump.fun payment")
+    if row["price_token"] != "SOL":
+        fail(400, VALIDATION_ERROR, "Only SOL marketplace payments are supported")
+    amount = _price_to_lamports(row["price_amount"])
+    return {
+        "listing_id": row["listing_id"],
+        "creator_user_id": row["creator_user_id"],
+        "title": row["title"],
+        "amount": amount,
+        "currency_symbol": "SOL",
+    }
+
+
+def _payment_scope_for_payload(payload: PumpfunCreateRequest) -> dict:
+    if payload.listing_id:
+        return _load_listing_payment_context(payload.listing_id)
+    return {
+        "listing_id": None,
+        "creator_user_id": None,
+        "title": None,
+        "amount": _amount_smallest_unit(),
+        "currency_symbol": "SOL",
+    }
 
 
 def _agent_token_mint() -> str:
@@ -169,19 +225,26 @@ def _store_pending_intent(
     payload: PumpfunCreateRequest,
     helper_payload: dict,
     invoice_id: str | None,
-    ttl_seconds: int,
+    payment_scope: dict,
 ) -> None:
     expires_at_epoch = int(helper_payload["endTime"])
+    listing_id = payment_scope.get("listing_id")
+    metadata = {
+        "source": "pumpfun_sdk",
+        "listing_id": listing_id,
+        "creator_user_id": payment_scope.get("creator_user_id"),
+        "listing_title": payment_scope.get("title"),
+    }
     with get_connection() as conn:
         conn.execute(
             """
             INSERT INTO payment_intents(
                 reference, user_id, token, expires_at_epoch, user_wallet,
                 agent_token_mint, currency_mint, currency_symbol, amount_smallest_unit,
-                memo, start_time, end_time, invoice_id, tool_id, access_tier,
+                memo, start_time, end_time, invoice_id, product_id, tool_id, access_tier,
                 status, verification_status, expires_at, metadata_json, currency, chain
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?)
             """,
             (
                 reference,
@@ -197,11 +260,12 @@ def _store_pending_intent(
                 helper_payload["startTime"],
                 helper_payload["endTime"],
                 invoice_id,
+                listing_id,
                 FEATURE_RANDOM_NUMBER,
                 payload.access_tier,
                 "pending",
                 "unverified",
-                json.dumps({"source": "pumpfun_sdk"}, sort_keys=True),
+                json.dumps(metadata, sort_keys=True),
                 "SOL",
                 "solana-mainnet",
             ),
@@ -247,6 +311,9 @@ def _validate_exact_invoice_columns(row) -> None:
 
 def _record_verified_payment_and_access(*, row, tx_signature: str, invoice_id: str | None) -> int:
     with get_connection() as conn:
+        listing_id = row["product_id"]
+        grant_scope = f"marketplace_listing:{listing_id}" if listing_id else FEATURE_RANDOM_NUMBER
+        feature_name = grant_scope if listing_id else FEATURE_RANDOM_NUMBER
         try:
             cursor = conn.execute(
                 """
@@ -308,26 +375,36 @@ def _record_verified_payment_and_access(*, row, tx_signature: str, invoice_id: s
                 """
                 INSERT INTO access_grants(
                     user_id, feature_name, status, payment_id, intent_reference,
-                    grant_scope, source, tool_id, updated_at, metadata_json
+                    grant_scope, source, product_id, tool_id, updated_at, metadata_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
                 """,
                 (
                     row["user_id"],
-                    FEATURE_RANDOM_NUMBER,
+                    feature_name,
                     "active",
                     payment_id,
                     row["reference"],
-                    FEATURE_RANDOM_NUMBER,
+                    grant_scope,
                     "pumpfun_sdk",
+                    listing_id,
                     FEATURE_RANDOM_NUMBER,
-                    json.dumps({"invoice_id": invoice_id or row["invoice_id"]}, sort_keys=True),
+                    json.dumps({"invoice_id": invoice_id or row["invoice_id"], "listing_id": listing_id}, sort_keys=True),
                 ),
             )
         except Exception as exc:
             if is_unique_violation(exc):
                 fail(400, TRANSACTION_SIGNATURE_USED, "Transaction signature already used")
             raise
+        if listing_id:
+            conn.execute(
+                """
+                INSERT INTO marketplace_entitlements(listing_id, user_id, installed_at)
+                VALUES (?, ?, datetime('now'))
+                ON CONFLICT(listing_id, user_id) DO UPDATE SET installed_at=datetime('now')
+                """,
+                (listing_id, row["user_id"]),
+            )
         conn.commit()
     return payment_id
 
@@ -340,7 +417,8 @@ def create_pumpfun_payment(payload: PumpfunCreateRequest, authorization: str | N
     ttl_seconds = _payment_ttl_seconds()
     start_time = int(time.time())
     end_time = start_time + ttl_seconds
-    amount = _amount_smallest_unit()
+    payment_scope = _payment_scope_for_payload(payload)
+    amount = payment_scope["amount"]
     helper_payload = _build_helper_payload(
         user_wallet=payload.user_wallet,
         agent_token_mint=_agent_token_mint(),
@@ -362,7 +440,7 @@ def create_pumpfun_payment(payload: PumpfunCreateRequest, authorization: str | N
         payload=payload,
         helper_payload=helper_payload,
         invoice_id=invoice_id,
-        ttl_seconds=ttl_seconds,
+        payment_scope=payment_scope,
     )
 
     return {
@@ -376,6 +454,7 @@ def create_pumpfun_payment(payload: PumpfunCreateRequest, authorization: str | N
         "currencyMint": helper_payload["currencyMint"],
         "currencySymbol": "SOL",
         "amount": amount,
+        "listing_id": payment_scope.get("listing_id"),
         "memo": helper_payload["memo"],
         "startTime": start_time,
         "endTime": end_time,
