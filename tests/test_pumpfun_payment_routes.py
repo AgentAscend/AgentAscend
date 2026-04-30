@@ -11,6 +11,17 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+def _safe_response_diag(response):
+    try:
+        body = response.json()
+    except Exception:
+        body = {}
+    error = body.get("error") if isinstance(body, dict) else None
+    error_code = error.get("code") if isinstance(error, dict) else None
+    keys = sorted(body.keys()) if isinstance(body, dict) else []
+    return f"status_code={response.status_code} error_code={error_code!r} keys={keys}"
+
+
 AGENT_MINT = "9jwExoB9h42bNeUyCH8qBJAye3NJGrToiX62DQTEpump"
 WSOL_MINT = "So11111111111111111111111111111111111111112"
 
@@ -39,7 +50,7 @@ def _signup(client: TestClient, email: str):
         "/auth/signup",
         json={"email": email, "password": "safe-test-password", "display_name": email.split("@", 1)[0]},
     )
-    assert response.status_code == 200, response.text
+    assert response.status_code == 200, _safe_response_diag(response)
     body = response.json()
     return body["user"]["user_id"], body["session_token"]
 
@@ -73,7 +84,7 @@ def test_pumpfun_create_requires_auth(client: TestClient):
         json={"user_id": "user_without_auth", "user_wallet": "Wallet111111111111111111111111111111111111"},
     )
 
-    assert response.status_code == 401, response.text
+    assert response.status_code == 401, _safe_response_diag(response)
     assert response.json()["error"]["code"] == "unauthorized"
 
 
@@ -86,7 +97,7 @@ def test_pumpfun_create_missing_payment_config_returns_payment_config_error(clie
         json={"user_id": user_id, "user_wallet": "Wallet111111111111111111111111111111111111"},
         headers=_auth_header(token),
     )
-    assert response.status_code == 500, response.text
+    assert response.status_code == 500, _safe_response_diag(response)
     assert response.json()["error"]["code"] == "payment_config_error"
 
 
@@ -103,7 +114,7 @@ def test_pumpfun_create_rejects_rpc_url_input(client: TestClient):
         headers=_auth_header(token),
     )
 
-    assert response.status_code == 422, response.text
+    assert response.status_code == 422, _safe_response_diag(response)
 
 
 def test_pumpfun_create_builds_unsigned_transaction_and_stores_immutable_invoice(client: TestClient, monkeypatch):
@@ -125,7 +136,7 @@ def test_pumpfun_create_builds_unsigned_transaction_and_stores_immutable_invoice
         headers=_auth_header(token),
     )
 
-    assert response.status_code == 200, response.text
+    assert response.status_code == 200, _safe_response_diag(response)
     body = response.json()
     assert body["status"] == "payment_transaction_built"
     assert body["txBase64"] == "unsigned-tx-base64"
@@ -181,7 +192,7 @@ def test_pumpfun_create_helper_failure_returns_safe_error_without_storing_intent
         headers=_auth_header(token),
     )
 
-    assert response.status_code == 400, response.text
+    assert response.status_code == 400, _safe_response_diag(response)
     assert response.json()["error"]["code"] == "payment_helper_error"
     assert "http" not in response.text.lower()
 
@@ -198,7 +209,7 @@ def test_pumpfun_verify_requires_auth(client: TestClient):
         json={"user_id": "some_user", "reference": "ref", "tx_signature": "3" * 88},
     )
 
-    assert response.status_code == 401, response.text
+    assert response.status_code == 401, _safe_response_diag(response)
     assert response.json()["error"]["code"] == "unauthorized"
 
 
@@ -213,14 +224,14 @@ def test_pumpfun_verify_malformed_signature_returns_validation_error(client: Tes
         json={"user_id": user_id, "user_wallet": "Wallet311111111111111111111111111111111111"},
         headers=_auth_header(token),
     )
-    assert create_response.status_code == 200, create_response.text
+    assert create_response.status_code == 200, _safe_response_diag(create_response)
 
     verify_response = client.post(
         "/payments/pumpfun/verify",
         json={"user_id": user_id, "reference": create_response.json()["reference"], "tx_signature": "bad-sig"},
         headers=_auth_header(token),
     )
-    assert verify_response.status_code == 400, verify_response.text
+    assert verify_response.status_code == 400, _safe_response_diag(verify_response)
     assert verify_response.json()["error"]["code"] == "validation_error"
 
 
@@ -237,7 +248,7 @@ def test_pumpfun_verify_rejects_cross_user_reference(client: TestClient, monkeyp
         json={"user_id": owner_id, "user_wallet": "Wallet333333333333333333333333333333333333"},
         headers=_auth_header(owner_token),
     )
-    assert create_response.status_code == 200, create_response.text
+    assert create_response.status_code == 200, _safe_response_diag(create_response)
 
     attack_response = client.post(
         "/payments/pumpfun/verify",
@@ -245,7 +256,7 @@ def test_pumpfun_verify_rejects_cross_user_reference(client: TestClient, monkeyp
         headers=_auth_header(attacker_token),
     )
 
-    assert attack_response.status_code == 403, attack_response.text
+    assert attack_response.status_code == 403, _safe_response_diag(attack_response)
     assert attack_response.json()["error"]["code"] == "forbidden"
 
 
@@ -276,7 +287,7 @@ def test_pumpfun_verify_uses_exact_stored_invoice_params_and_grants_access(clien
         json={"user_id": user_id, "user_wallet": "Wallet444444444444444444444444444444444444"},
         headers=_auth_header(token),
     )
-    assert create_response.status_code == 200, create_response.text
+    assert create_response.status_code == 200, _safe_response_diag(create_response)
     reference = create_response.json()["reference"]
 
     verify_response = client.post(
@@ -285,7 +296,7 @@ def test_pumpfun_verify_uses_exact_stored_invoice_params_and_grants_access(clien
         headers=_auth_header(token),
     )
 
-    assert verify_response.status_code == 200, verify_response.text
+    assert verify_response.status_code == 200, _safe_response_diag(verify_response)
     body = verify_response.json()
     assert body["status"] == "payment_verified"
     assert body["reference"] == reference
@@ -341,7 +352,7 @@ def test_pumpfun_verify_unverified_payment_does_not_grant_access(client: TestCli
         json={"user_id": user_id, "user_wallet": "Wallet555555555555555555555555555555555555"},
         headers=_auth_header(token),
     )
-    assert create_response.status_code == 200, create_response.text
+    assert create_response.status_code == 200, _safe_response_diag(create_response)
 
     verify_response = client.post(
         "/payments/pumpfun/verify",
@@ -349,7 +360,7 @@ def test_pumpfun_verify_unverified_payment_does_not_grant_access(client: TestCli
         headers=_auth_header(token),
     )
 
-    assert verify_response.status_code == 400, verify_response.text
+    assert verify_response.status_code == 400, _safe_response_diag(verify_response)
     assert verify_response.json()["error"]["code"] == "payment_not_verified"
 
     from backend.app.services.access_service import FEATURE_RANDOM_NUMBER, has_access
@@ -377,13 +388,13 @@ def test_pumpfun_verify_duplicate_tx_signature_returns_safe_error_without_second
         json={"user_id": first_user_id, "user_wallet": "Wallet666666666666666666666666666666666666"},
         headers=_auth_header(first_token),
     )
-    assert first_create.status_code == 200, first_create.text
+    assert first_create.status_code == 200, _safe_response_diag(first_create)
     second_create = client.post(
         "/payments/pumpfun/create",
         json={"user_id": second_user_id, "user_wallet": "Wallet777777777777777777777777777777777777"},
         headers=_auth_header(second_token),
     )
-    assert second_create.status_code == 200, second_create.text
+    assert second_create.status_code == 200, _safe_response_diag(second_create)
 
     tx_signature = "7" * 88
     first_verify = client.post(
@@ -391,14 +402,14 @@ def test_pumpfun_verify_duplicate_tx_signature_returns_safe_error_without_second
         json={"user_id": first_user_id, "reference": first_create.json()["reference"], "tx_signature": tx_signature},
         headers=_auth_header(first_token),
     )
-    assert first_verify.status_code == 200, first_verify.text
+    assert first_verify.status_code == 200, _safe_response_diag(first_verify)
 
     duplicate_verify = client.post(
         "/payments/pumpfun/verify",
         json={"user_id": second_user_id, "reference": second_create.json()["reference"], "tx_signature": tx_signature},
         headers=_auth_header(second_token),
     )
-    assert duplicate_verify.status_code == 400, duplicate_verify.text
+    assert duplicate_verify.status_code == 400, _safe_response_diag(duplicate_verify)
     assert duplicate_verify.json()["error"]["code"] == "transaction_signature_used"
 
     from backend.app.db.session import get_connection
@@ -430,7 +441,7 @@ def test_pumpfun_verify_expired_intent_does_not_call_helper_or_grant_access(clie
         json={"user_id": user_id, "user_wallet": "Wallet888888888888888888888888888888888888"},
         headers=_auth_header(token),
     )
-    assert create_response.status_code == 200, create_response.text
+    assert create_response.status_code == 200, _safe_response_diag(create_response)
 
     from backend.app.db.session import get_connection
 
@@ -446,7 +457,7 @@ def test_pumpfun_verify_expired_intent_does_not_call_helper_or_grant_access(clie
         json={"user_id": user_id, "reference": create_response.json()["reference"], "tx_signature": "8" * 88},
         headers=_auth_header(token),
     )
-    assert verify_response.status_code == 400, verify_response.text
+    assert verify_response.status_code == 400, _safe_response_diag(verify_response)
     assert verify_response.json()["error"]["code"] == "payment_intent_expired"
     assert validate_calls == []
 
@@ -471,7 +482,7 @@ def test_pumpfun_verify_concurrent_same_signature_single_success_or_safe_replay(
         json={"user_id": user_id, "user_wallet": "Wallet121212121212121212121212121212121212"},
         headers=_auth_header(token),
     )
-    assert create_response.status_code == 200, create_response.text
+    assert create_response.status_code == 200, _safe_response_diag(create_response)
 
     payload = {
         "user_id": user_id,
@@ -486,7 +497,7 @@ def test_pumpfun_verify_concurrent_same_signature_single_success_or_safe_replay(
         responses = list(pool.map(lambda _i: _verify_once(), [0, 1]))
 
     statuses = sorted(r.status_code for r in responses)
-    assert statuses == [200, 400], [r.text for r in responses]
+    assert statuses == [200, 400], [_safe_response_diag(r) for r in responses]
 
     error_codes = [r.json().get("error", {}).get("code") for r in responses if r.status_code == 400]
     assert error_codes[0] in {"transaction_signature_used", "payment_intent_consumed"}
@@ -519,7 +530,7 @@ def test_record_verified_payment_and_access_handles_postgres_cursor_without_last
         json={"user_id": user_id, "user_wallet": "Wallet999999999999999999999999999999999999"},
         headers=_auth_header(token),
     )
-    assert create_response.status_code == 200, create_response.text
+    assert create_response.status_code == 200, _safe_response_diag(create_response)
     row = _intent_row(create_response.json()["reference"])
 
     from backend.app.routes import pumpfun_payments

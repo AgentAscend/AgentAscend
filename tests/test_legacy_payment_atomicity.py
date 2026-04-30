@@ -10,6 +10,17 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+def _safe_response_diag(response):
+    try:
+        body = response.json()
+    except Exception:
+        body = {}
+    error = body.get("error") if isinstance(body, dict) else None
+    error_code = error.get("code") if isinstance(error, dict) else None
+    keys = sorted(body.keys()) if isinstance(body, dict) else []
+    return f"status_code={response.status_code} error_code={error_code!r} keys={keys}"
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     db_path = tmp_path / "agentascend-legacy-atomicity.db"
@@ -31,7 +42,7 @@ def _signup(client: TestClient, email: str):
         "/auth/signup",
         json={"email": email, "password": "safe-password", "display_name": "atomicity"},
     )
-    assert response.status_code == 200, response.text
+    assert response.status_code == 200, _safe_response_diag(response)
     body = response.json()
     return body["user"]["user_id"], body["session_token"]
 
@@ -44,7 +55,7 @@ def test_legacy_verify_rolls_back_payment_when_grant_fails(client: TestClient, m
     monkeypatch.setattr("backend.app.routes.payments.received_lamports_for_wallet", lambda _tx, _wallet: 200_000_000)
 
     create = client.post("/payments/create", json={"user_id": user_id, "token": "SOL"})
-    assert create.status_code == 200, create.text
+    assert create.status_code == 200, _safe_response_diag(create)
     reference = create.json()["reference"]
 
     def fail_grant(*_args, **_kwargs):

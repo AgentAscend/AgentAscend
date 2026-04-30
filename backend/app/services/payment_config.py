@@ -1,9 +1,11 @@
+import logging
 import os
 from decimal import Decimal
 
 from fastapi import HTTPException
 
 DEFAULT_SOL_PRICE_LAMPORTS = 100_000_000  # 0.1 SOL
+logger = logging.getLogger(__name__)
 
 
 def _required_env(name: str) -> str:
@@ -24,10 +26,11 @@ def _is_production_env() -> bool:
     return any(v in {"prod", "production"} for v in normalized)
 
 
-def validate_payment_startup_env() -> None:
-    if not _is_production_env():
-        return
+def _strict_payment_startup_validation_enabled() -> bool:
+    return (os.getenv("PAYMENT_STARTUP_VALIDATION_STRICT") or "").strip().lower() in {"1", "true", "yes", "on"}
 
+
+def payment_startup_config_issues() -> list[str]:
     required_names = [
         "SOLANA_RECEIVER_WALLET",
         "AGENT_TOKEN_MINT_ADDRESS",
@@ -35,11 +38,44 @@ def validate_payment_startup_env() -> None:
         "PRICE_AMOUNT_SMALLEST_UNIT",
         "SOL_PRICE_LAMPORTS",
     ]
+    issues: list[str] = []
     for name in required_names:
-        _required_env(name)
+        if not (os.getenv(name) or "").strip():
+            issues.append(name)
 
-    required_positive_int_env("PRICE_AMOUNT_SMALLEST_UNIT")
-    required_positive_int_env("SOL_PRICE_LAMPORTS")
+    for name in ["PRICE_AMOUNT_SMALLEST_UNIT", "SOL_PRICE_LAMPORTS"]:
+        raw = (os.getenv(name) or "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            issues.append(name)
+            continue
+        if value <= 0:
+            issues.append(name)
+    return sorted(set(issues))
+
+
+def validate_payment_startup_env() -> None:
+    if not _is_production_env():
+        return
+
+    issues = payment_startup_config_issues()
+    if not issues:
+        return
+
+    if _strict_payment_startup_validation_enabled():
+        name = issues[0]
+        if name in {"PRICE_AMOUNT_SMALLEST_UNIT", "SOL_PRICE_LAMPORTS"} and (os.getenv(name) or "").strip():
+            required_positive_int_env(name)
+        _required_env(name)
+        return
+
+    logger.warning(
+        "Payment startup config incomplete; payment routes remain fail-closed",
+        extra={"missing_payment_config": issues},
+    )
 
 
 def sol_price_lamports() -> int:

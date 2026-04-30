@@ -11,6 +11,17 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+def _safe_response_diag(response):
+    try:
+        body = response.json()
+    except Exception:
+        body = {}
+    error = body.get("error") if isinstance(body, dict) else None
+    error_code = error.get("code") if isinstance(error, dict) else None
+    keys = sorted(body.keys()) if isinstance(body, dict) else []
+    return f"status_code={response.status_code} error_code={error_code!r} keys={keys}"
+
+
 @pytest.fixture()
 def app_client(tmp_path, monkeypatch):
     db_path = tmp_path / "agentascend-replay-race.db"
@@ -31,7 +42,7 @@ def _signup(client: TestClient, email: str):
         "/auth/signup",
         json={"email": email, "password": "safe-password", "display_name": "race"},
     )
-    assert response.status_code == 200, response.text
+    assert response.status_code == 200, _safe_response_diag(response)
     body = response.json()
     return body["user"]["user_id"], body["session_token"]
 
@@ -43,7 +54,7 @@ def test_replay_race_same_signature_creates_single_payment_and_grant(app_client,
     with TestClient(app_client) as seed_client:
         user_id, token = _signup(seed_client, "race@example.com")
         create = seed_client.post("/payments/create", json={"user_id": user_id, "token": "SOL"})
-        assert create.status_code == 200, create.text
+        assert create.status_code == 200, _safe_response_diag(create)
         reference = create.json()["reference"]
 
     payload = {

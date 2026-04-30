@@ -539,14 +539,27 @@ def _create_access_grant_replay_unique_indexes_sqlite(conn: sqlite3.Connection) 
     conn.execute(ACCESS_GRANTS_ACTIVE_PAYMENT_UNIQUE_INDEX_SQL)
 
 
-def _create_access_grant_replay_unique_indexes_postgres(conn) -> None:
+def _preflight_access_grant_replay_unique_indexes_postgres(conn) -> tuple[list, list]:
     duplicate_intent_rows, duplicate_payment_rows = _access_grant_duplicate_samples(conn)
     if duplicate_intent_rows or duplicate_payment_rows:
         _log_replay_index_preflight_skip("postgres", duplicate_intent_rows, duplicate_payment_rows)
+    return duplicate_intent_rows, duplicate_payment_rows
+
+
+def _create_access_grant_replay_unique_indexes_postgres(conn) -> None:
+    duplicate_intent_rows, duplicate_payment_rows = _preflight_access_grant_replay_unique_indexes_postgres(conn)
+    if duplicate_intent_rows or duplicate_payment_rows:
         return
 
     conn.execute(ACCESS_GRANTS_ACTIVE_INTENT_UNIQUE_INDEX_SQL)
     conn.execute(ACCESS_GRANTS_ACTIVE_PAYMENT_UNIQUE_INDEX_SQL)
+
+
+def _maybe_create_access_grant_replay_unique_indexes_postgres(conn) -> None:
+    if (os.getenv("ENABLE_POSTGRES_REPLAY_INDEX_STARTUP_CREATE") or "").strip().lower() in {"1", "true", "yes", "on"}:
+        _create_access_grant_replay_unique_indexes_postgres(conn)
+        return
+    _preflight_access_grant_replay_unique_indexes_postgres(conn)
 
 
 def _init_sqlite_db():
@@ -1936,7 +1949,7 @@ def _init_postgres_db():
         conn.execute("UPDATE community_posts SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL")
         for ddl in _POSTGRES_INDEX_DDL:
             conn.execute(ddl)
-        _create_access_grant_replay_unique_indexes_postgres(conn)
+        _maybe_create_access_grant_replay_unique_indexes_postgres(conn)
         _seed_default_scheduled_jobs(conn)
         _remove_legacy_demo_rows(conn)
         conn.commit()

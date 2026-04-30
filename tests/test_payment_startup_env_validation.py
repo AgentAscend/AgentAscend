@@ -22,8 +22,31 @@ def test_payment_startup_env_validation_skips_non_production(monkeypatch):
     payment_config.validate_payment_startup_env()
 
 
-def test_payment_startup_env_validation_fails_closed_in_production(monkeypatch):
+def test_payment_startup_env_validation_warns_by_default_in_production(monkeypatch, caplog):
     monkeypatch.setenv("AGENTASCEND_ENV", "production")
+    monkeypatch.delenv("PAYMENT_STARTUP_VALIDATION_STRICT", raising=False)
+    for key in [
+        "SOLANA_RECEIVER_WALLET",
+        "AGENT_TOKEN_MINT_ADDRESS",
+        "CURRENCY_MINT",
+        "PRICE_AMOUNT_SMALLEST_UNIT",
+        "SOL_PRICE_LAMPORTS",
+    ]:
+        monkeypatch.delenv(key, raising=False)
+
+    from backend.app.services import payment_config
+
+    importlib.reload(payment_config)
+    with caplog.at_level("WARNING"):
+        payment_config.validate_payment_startup_env()
+
+    assert any("Payment startup config incomplete" in record.message for record in caplog.records)
+    assert any(getattr(record, "missing_payment_config", None) for record in caplog.records)
+
+
+def test_payment_startup_env_validation_strict_flag_fails_closed_in_production(monkeypatch):
+    monkeypatch.setenv("AGENTASCEND_ENV", "production")
+    monkeypatch.setenv("PAYMENT_STARTUP_VALIDATION_STRICT", "1")
     for key in [
         "SOLANA_RECEIVER_WALLET",
         "AGENT_TOKEN_MINT_ADDRESS",

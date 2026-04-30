@@ -1,13 +1,13 @@
 import logging
 import os
 import re
-import sqlite3
 import time
 import uuid
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Header, HTTPException
 
+from backend.app.db.errors import is_unique_violation
 from backend.app.db.session import get_connection
 from backend.app.providers.solana_rpc import fetch_transaction, received_lamports_for_wallet
 from backend.app.providers.spl_token_rpc import (
@@ -289,18 +289,25 @@ def verify_payment(payload: PaymentVerifyRequest, authorization: str | None = He
                     """,
                     (payload.user_id, amount, selected_token, "completed", payload.tx_signature),
                 )
-            except sqlite3.IntegrityError as exc:
-                fail(400, TRANSACTION_SIGNATURE_USED, "Transaction signature already used")
+            except Exception as exc:
+                if is_unique_violation(exc):
+                    fail(400, TRANSACTION_SIGNATURE_USED, "Transaction signature already used")
+                raise
 
             payment_id = cursor.lastrowid
-            grant_access(
-                payload.user_id,
-                FEATURE_RANDOM_NUMBER,
-                conn=conn,
-                payment_id=payment_id,
-                intent_reference=payload.reference,
-                source="legacy_verify",
-            )
+            try:
+                grant_access(
+                    payload.user_id,
+                    FEATURE_RANDOM_NUMBER,
+                    conn=conn,
+                    payment_id=payment_id,
+                    intent_reference=payload.reference,
+                    source="legacy_verify",
+                )
+            except Exception as exc:
+                if is_unique_violation(exc):
+                    fail(400, TRANSACTION_SIGNATURE_USED, "Transaction signature already used")
+                raise
             conn.execute(
                 "UPDATE payment_intents SET consumed_at = CURRENT_TIMESTAMP WHERE reference = ?",
                 (payload.reference,),

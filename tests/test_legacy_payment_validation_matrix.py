@@ -10,6 +10,17 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+def _safe_response_diag(response):
+    try:
+        body = response.json()
+    except Exception:
+        body = {}
+    error = body.get("error") if isinstance(body, dict) else None
+    error_code = error.get("code") if isinstance(error, dict) else None
+    keys = sorted(body.keys()) if isinstance(body, dict) else []
+    return f"status_code={response.status_code} error_code={error_code!r} keys={keys}"
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     db_path = tmp_path / "agentascend-legacy-validation-matrix.db"
@@ -31,7 +42,7 @@ def _signup(client: TestClient, email: str):
         "/auth/signup",
         json={"email": email, "password": "safe-password", "display_name": "matrix"},
     )
-    assert response.status_code == 200, response.text
+    assert response.status_code == 200, _safe_response_diag(response)
     body = response.json()
     return body["user"]["user_id"], body["session_token"]
 
@@ -93,7 +104,7 @@ def test_legacy_validation_matrix_amount_and_mint_failures(client: TestClient, m
     monkeypatch.setattr("backend.app.routes.payments.received_token_amount_for_wallet", lambda _tx, _acct, _mint: patches.get("token_amount", "100"))
 
     create = client.post("/payments/create", json={"user_id": user_id, "token": token})
-    assert create.status_code == 200, create.text
+    assert create.status_code == 200, _safe_response_diag(create)
 
     verify = client.post(
         "/payments/verify",

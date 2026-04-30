@@ -1,7 +1,6 @@
 import json
 import os
 import re
-import sqlite3
 import time
 import uuid
 from typing import Literal
@@ -9,6 +8,7 @@ from typing import Literal
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.app.db.errors import is_unique_violation
 from backend.app.db.session import get_connection
 from backend.app.services import pumpfun_node_helper
 from backend.app.services.access_service import FEATURE_RANDOM_NUMBER
@@ -282,8 +282,10 @@ def _record_verified_payment_and_access(*, row, tx_signature: str, invoice_id: s
                     "verified",
                 ),
             )
-        except sqlite3.IntegrityError:
-            fail(400, TRANSACTION_SIGNATURE_USED, "Transaction signature already used")
+        except Exception as exc:
+            if is_unique_violation(exc):
+                fail(400, TRANSACTION_SIGNATURE_USED, "Transaction signature already used")
+            raise
         payment_id = getattr(cursor, "lastrowid", None)
         if payment_id is None:
             payment_row = conn.execute(
@@ -301,26 +303,31 @@ def _record_verified_payment_and_access(*, row, tx_signature: str, invoice_id: s
             """,
             ("completed", "verified", tx_signature, row["reference"]),
         )
-        conn.execute(
-            """
-            INSERT INTO access_grants(
-                user_id, feature_name, status, payment_id, intent_reference,
-                grant_scope, source, tool_id, updated_at, metadata_json
+        try:
+            conn.execute(
+                """
+                INSERT INTO access_grants(
+                    user_id, feature_name, status, payment_id, intent_reference,
+                    grant_scope, source, tool_id, updated_at, metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
+                """,
+                (
+                    row["user_id"],
+                    FEATURE_RANDOM_NUMBER,
+                    "active",
+                    payment_id,
+                    row["reference"],
+                    FEATURE_RANDOM_NUMBER,
+                    "pumpfun_sdk",
+                    FEATURE_RANDOM_NUMBER,
+                    json.dumps({"invoice_id": invoice_id or row["invoice_id"]}, sort_keys=True),
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
-            """,
-            (
-                row["user_id"],
-                FEATURE_RANDOM_NUMBER,
-                "active",
-                payment_id,
-                row["reference"],
-                FEATURE_RANDOM_NUMBER,
-                "pumpfun_sdk",
-                FEATURE_RANDOM_NUMBER,
-                json.dumps({"invoice_id": invoice_id or row["invoice_id"]}, sort_keys=True),
-            ),
-        )
+        except Exception as exc:
+            if is_unique_violation(exc):
+                fail(400, TRANSACTION_SIGNATURE_USED, "Transaction signature already used")
+            raise
         conn.commit()
     return payment_id
 
@@ -395,6 +402,9 @@ def verify_pumpfun_payment(payload: PumpfunVerifyRequest, authorization: str | N
         end_time=int(row["end_time"]),
     )
 
+    # Current Pump.fun helper semantics validate the immutable invoice terms.
+    # The submitted tx_signature is still recorded for local replay/accounting;
+    # add an exact signature-to-invoice cross-check later if the SDK exposes it.
     helper_result = pumpfun_node_helper.validate_invoice_payment(helper_payload)
     if not helper_result.get("ok"):
         _safe_helper_error()

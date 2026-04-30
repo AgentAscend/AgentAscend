@@ -336,7 +336,7 @@ def test_postgres_preflight_skips_replay_unique_indexes_when_duplicates_exist(mo
     assert session.ACCESS_GRANTS_ACTIVE_PAYMENT_UNIQUE_INDEX_SQL not in executed_sql
 
 
-def test_postgres_preflight_creates_replay_unique_indexes_when_no_duplicates(monkeypatch):
+def test_postgres_startup_preflight_does_not_create_replay_unique_indexes_by_default(monkeypatch):
     import backend.app.db.session as session
 
     executed_sql = []
@@ -352,8 +352,33 @@ def test_postgres_preflight_creates_replay_unique_indexes_when_no_duplicates(mon
             return _Cursor()
 
     monkeypatch.setattr(session, "_access_grant_duplicate_samples", lambda _conn: ([], []))
+    monkeypatch.delenv("ENABLE_POSTGRES_REPLAY_INDEX_STARTUP_CREATE", raising=False)
 
-    session._create_access_grant_replay_unique_indexes_postgres(FakeConn())
+    session._preflight_access_grant_replay_unique_indexes_postgres(FakeConn())
+
+    assert session.ACCESS_GRANTS_ACTIVE_INTENT_UNIQUE_INDEX_SQL not in executed_sql
+    assert session.ACCESS_GRANTS_ACTIVE_PAYMENT_UNIQUE_INDEX_SQL not in executed_sql
+
+
+def test_postgres_replay_index_feature_flag_creates_indexes_when_no_duplicates(monkeypatch):
+    import backend.app.db.session as session
+
+    executed_sql = []
+
+    class FakeConn:
+        def execute(self, sql, params=None):
+            executed_sql.append(sql)
+
+            class _Cursor:
+                def fetchall(self_inner):
+                    return []
+
+            return _Cursor()
+
+    monkeypatch.setattr(session, "_access_grant_duplicate_samples", lambda _conn: ([], []))
+    monkeypatch.setenv("ENABLE_POSTGRES_REPLAY_INDEX_STARTUP_CREATE", "1")
+
+    session._maybe_create_access_grant_replay_unique_indexes_postgres(FakeConn())
 
     assert session.ACCESS_GRANTS_ACTIVE_INTENT_UNIQUE_INDEX_SQL in executed_sql
     assert session.ACCESS_GRANTS_ACTIVE_PAYMENT_UNIQUE_INDEX_SQL in executed_sql
