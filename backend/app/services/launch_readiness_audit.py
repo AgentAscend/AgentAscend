@@ -96,6 +96,46 @@ def _exists_by_all_conditions(audit: AuditConnection, table: str, conditions: li
     return row is not None
 
 
+def _fetch_one_matching_conditions(
+    audit: AuditConnection,
+    table: str,
+    conditions: list[tuple[str, Any]],
+    select_columns: list[str],
+) -> dict[str, Any] | None:
+    columns = audit.columns(table)
+    usable_conditions = [
+        (column, value) for column, value in conditions if column in columns and value is not None and value != ""
+    ]
+    available_columns = [selected for selected in select_columns if selected in columns]
+    if not usable_conditions or not available_columns:
+        return None
+    where_sql = " OR ".join(f"{column} = {audit.placeholder()}" for column, _value in usable_conditions)
+    selected_sql = ", ".join(available_columns)
+    row = audit.execute(
+        f"SELECT {selected_sql} FROM {table} WHERE {where_sql} LIMIT 1",
+        [value for _column, value in usable_conditions],
+    ).fetchone()
+    if row is None:
+        return None
+    return {selected: row[index] for index, selected in enumerate(available_columns)}
+
+
+def _listing_candidates(*values: Any) -> list[str]:
+    candidates: list[str] = []
+    prefixes = ("marketplace_listing:", "listing:")
+    for value in values:
+        if not isinstance(value, str) or not value:
+            continue
+        raw_candidates = [value]
+        for prefix in prefixes:
+            if value.startswith(prefix):
+                raw_candidates.append(value.removeprefix(prefix))
+        for candidate in raw_candidates:
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
+    return candidates
+
+
 def _duplicate_tx_group_count(audit: AuditConnection, table: str, tx_signature: str) -> int:
     if "tx_signature" not in audit.columns(table):
         return 0
@@ -173,17 +213,29 @@ def _payment_evidence_for_connection(conn: Any, dialect: str, tx_signature: str)
         intent_user_id = None
 
     user_id = payment_user_id or intent_user_id
-    result["access_grant_present"] = _exists_by_conditions(
+    access_grant = _fetch_one_matching_conditions(
         audit,
         "access_grants",
         [("payment_id", payment_id), ("intent_reference", payment_reference)],
+        ["user_id", "feature_name", "grant_scope", "product_id"],
     )
-    result["marketplace_entitlement_present"] = _exists_by_all_conditions(
-        audit,
-        "marketplace_entitlements",
-        [("listing_id", product_id), ("user_id", user_id)],
-    )
-    result["listing_scoped"] = bool(product_id and result["marketplace_entitlement_present"])
+    result["access_grant_present"] = access_grant is not None
+    if user_id is None and access_grant is not None:
+        user_id = access_grant.get("user_id")
+
+    grant_feature_name = access_grant.get("feature_name") if access_grant is not None else None
+    grant_scope = access_grant.get("grant_scope") if access_grant is not None else None
+    grant_product_id = access_grant.get("product_id") if access_grant is not None else None
+    for listing_id in _listing_candidates(product_id, grant_product_id, grant_scope, grant_feature_name):
+        if _exists_by_all_conditions(
+            audit,
+            "marketplace_entitlements",
+            [("listing_id", listing_id), ("user_id", user_id)],
+        ):
+            result["marketplace_entitlement_present"] = True
+            break
+
+    result["listing_scoped"] = result["marketplace_entitlement_present"]
     if not result["listing_scoped"] and isinstance(product_id, str):
         result["listing_scoped"] = product_id.startswith("listing") or product_id.startswith("marketplace")
     if not result["listing_scoped"] and isinstance(tool_id, str):

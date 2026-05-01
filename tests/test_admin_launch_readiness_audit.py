@@ -243,7 +243,7 @@ def test_payment_evidence_lookup_returns_safe_evidence_shape(tmp_path, monkeypat
                     "completed",
                     tx_signature,
                     "payment_verified",
-                    "listing-safe-1",
+                    None,
                     json.dumps({"leak": "raw-metadata-secret"}),
                 ),
             )
