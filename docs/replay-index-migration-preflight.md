@@ -1,49 +1,61 @@
-# AgentAscend Replay-index Migration Preflight
+# Replay Index Migration Approval Package
 
-Status: PREPARED ONLY. Do not run DDL without explicit owner approval.
+Related: [[Payment Access Control]], [[Pump.fun Tokenized Agent Payments]], [[Launch Readiness]], [[Ops Runbook]]
 
-## Current preflight summary
-- Public `/health`: HTTP 200.
-- Public `/openapi.json`: HTTP 200 and valid JSON.
-- Pump.fun create/verify routes: present.
-- Admin aggregate audit route: present and unauthenticated access fails closed.
-- Security headers including HSTS: present.
-- Admin aggregate safety flags from read-only endpoint: raw metadata not returned, raw payloads not returned, DB URL not printed, secrets not printed, read-only mode true.
-- Duplicate aggregate counts from read-only endpoint: payment tx_signature groups 0; payment_intent tx_signature groups 0; active grant groups 0; listing/user entitlement groups 0.
-- Existing index inspection: PARTIAL/BLOCKED in current tooling because safe DB index inspection could not be completed without a driver/in-service shell path. Treat index inspection as a required step in the owner-approved migration command/path before DDL.
+## Status
+PARTIAL / OWNER APPROVAL PACKAGE READY FOR FUTURE DDL PHASE.
 
-## Owner approval prompt
+This document is planning-only. No DDL was run, no migration was run, no index was created, and no production DB mutation was performed.
 
-I approve the AgentAscend Postgres replay-index migration DDL phase.
+## Required prechecks
+1. `GET https://api.agentascend.ai/health` returns 200.
+2. `GET https://api.agentascend.ai/openapi.json` returns 200 and valid JSON.
+3. OpenAPI contains `/payments/pumpfun/create`, `/payments/pumpfun/verify`, `/admin/audits/launch-readiness/aggregate`, and `/admin/audits/payment-evidence/{tx_signature}`.
+4. Schema-valid unauthenticated Pump.fun create returns 401.
+5. Unauthenticated aggregate audit returns 403.
+6. HSTS and standard security headers are present.
 
-After approval, run a dedicated migration phase with the checks and DDL below. Do not run from FastAPI startup and do not run during deployment startup.
+## Duplicate aggregate preflight
+Run `GET /admin/audits/launch-readiness/aggregate` with `X-Agent-Runtime-Token` from the private owner/runtime environment. Summarize only aggregate values.
 
-## Required pre-migration checks
-1. `/health` returns HTTP 200.
-2. `/openapi.json` returns valid JSON.
-3. Admin aggregate endpoint is available.
-4. Duplicate counts are all zero:
-   - duplicate payment tx_signature groups: 0
-   - duplicate payment_intent tx_signature groups: 0
-   - duplicate active grant groups: 0
-   - duplicate listing/user entitlements: 0
-5. Existing index inspection is complete, or the owner explicitly accepts inspection as pending inside the migration command before any DDL.
-6. No deploy is in progress.
-7. Backup/rollback plan is known.
+Required safety flags:
+- `raw_metadata_returned: false`
+- `raw_payloads_returned: false`
+- `db_url_printed: false`
+- `secrets_printed: false`
+- `read_only_mode: true`
 
-## Existing index guard
-Before running DDL, inspect existing indexes on `payments`, `payment_intents`, `access_grants`, and `marketplace_entitlements`.
+Required duplicate counts before DDL:
+- duplicate payment `tx_signature` groups: 0
+- duplicate payment_intent `tx_signature` groups: 0
+- duplicate active grant groups: 0
+- duplicate listing/user entitlement groups: 0
 
-Report only table, index name, valid yes/no, unique yes/no, column/predicate summary, and recommended action.
+If any duplicate count is nonzero, stop and prepare a cleanup plan instead of running DDL.
 
-Rules:
-- Skip any equivalent existing unique/valid index.
-- Avoid duplicate equivalent indexes.
-- If an invalid candidate index exists, stop and report before trying anything.
-- Leave non-unique helper indexes alone unless a separate owner-approved cleanup phase says otherwise.
+## Existing index inspection before DDL
+Inspect Postgres indexes read-only and report only table, index name, valid yes/no, unique yes/no, column/predicate summary, and action. If direct inspection is blocked, the owner-approved migration phase must run this query from a safe DB/admin shell before DDL:
+
+```sql
+SELECT
+  c.relname AS index_name,
+  t.relname AS table_name,
+  i.indisvalid AS is_valid,
+  i.indisunique AS is_unique,
+  pg_get_indexdef(i.indexrelid) AS index_definition
+FROM pg_index i
+JOIN pg_class c ON c.oid = i.indexrelid
+JOIN pg_class t ON t.oid = i.indrelid
+JOIN pg_namespace n ON n.oid = t.relnamespace
+WHERE n.nspname = 'public'
+  AND t.relname IN ('payments', 'payment_intents', 'access_grants', 'marketplace_entitlements')
+ORDER BY t.relname, c.relname;
+```
+
+Skip equivalent valid indexes. Leave non-unique helper indexes alone unless separately approved.
 
 ## Candidate DDL
-Run with `CONCURRENTLY`; do not wrap these statements in a normal transaction.
+Important: `CREATE INDEX CONCURRENTLY` cannot run inside a transaction. Do not run from FastAPI startup. Do not run during deployment startup.
 
 ```sql
 CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_payments_tx_signature_unique_nonempty
@@ -69,42 +81,22 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_marketplace_entitlements_list
 ON marketplace_entitlements(listing_id, user_id);
 ```
 
-## Important CONCURRENTLY rules
-- `CREATE INDEX CONCURRENTLY` cannot run inside a normal transaction.
-- `DROP INDEX CONCURRENTLY` also cannot run inside a normal transaction.
-- Do not run this from FastAPI startup.
-- Do not run this during deployment startup.
-- Run through a dedicated owner-approved migration command/path.
-
-## Post-migration verification
-1. Confirm index existence and validity.
-2. Confirm admin aggregate duplicate counts are still zero.
-3. Confirm `/health` still returns HTTP 200.
-4. Confirm `/openapi.json` is valid.
-5. Confirm Pump.fun routes are present.
-6. Confirm schema-valid unauthenticated Pump.fun create still returns 401.
-7. Confirm unauthenticated admin aggregate audit remains 403.
-8. Confirm logs are clean of critical DB errors.
-
-## Rollback/drop-index plan
-Use only if owner-approved and needed; do not wrap in a normal transaction.
+## Rollback plan
+Important: `DROP INDEX CONCURRENTLY` cannot run inside a transaction.
 
 ```sql
-DROP INDEX CONCURRENTLY IF EXISTS idx_payments_tx_signature_unique_nonempty;
-DROP INDEX CONCURRENTLY IF EXISTS idx_payment_intents_tx_signature_unique_nonempty;
-DROP INDEX CONCURRENTLY IF EXISTS idx_access_grants_active_user_feature_intent_unique;
-DROP INDEX CONCURRENTLY IF EXISTS idx_access_grants_active_user_feature_payment_unique;
 DROP INDEX CONCURRENTLY IF EXISTS idx_marketplace_entitlements_listing_user_unique;
+DROP INDEX CONCURRENTLY IF EXISTS idx_access_grants_active_user_feature_payment_unique;
+DROP INDEX CONCURRENTLY IF EXISTS idx_access_grants_active_user_feature_intent_unique;
+DROP INDEX CONCURRENTLY IF EXISTS idx_payment_intents_tx_signature_unique_nonempty;
+DROP INDEX CONCURRENTLY IF EXISTS idx_payments_tx_signature_unique_nonempty;
 ```
 
 ## Failure criteria
-Stop and report if any of these happen:
-- duplicate count is nonzero
-- DDL fails
-- invalid index is found
-- health fails
-- OpenAPI fails
-- payment routes regress
-- DB errors appear
-- logs show critical errors
-- migration command requires printing DB URL or secrets
+Stop if production health fails, OpenAPI fails, admin aggregate endpoint fails closed unexpectedly, safety flags are missing/unsafe, duplicate counts are nonzero, existing equivalent indexes are invalid/confusing, DDL reports lock/duplicate errors, or post-migration verification fails.
+
+## Post-migration verification
+Re-run health/OpenAPI/auth gates, aggregate duplicate preflight, and index inspection. Confirm all intended indexes exist, are valid, unique, and partial where expected.
+
+## Exact owner approval prompt
+`I approve the AgentAscend Postgres replay-index migration DDL phase. Run the health/OpenAPI/auth prechecks, admin aggregate duplicate preflight, read-only existing index inspection, then run only the safe concurrent unique index DDL if duplicate counts are zero and equivalent valid indexes do not already exist. Do not run DDL inside a transaction, do not run from FastAPI startup, do not mutate any rows, and stop on any blocker.`

@@ -24,6 +24,13 @@ Current soft-launch verdict: READY FOR SOFT LAUNCH / HARDENING ITEMS REMAIN. Liv
 - [[Ops Runbook]]
 
 ## Recent Evidence
+- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-29-0803]]
+- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-25]]
+- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-26]]
+- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-27]]
+- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-28]]
+- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-29]]
+- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-30]]
 - [[raw/launch-evidence/2026-04-30-pumpfun-live-payment-evidence|2026-04-30 Pump.fun Live Payment Evidence]] — public payment/claim evidence plus owner UI/accounting confirmation.
 - [[raw/launch-evidence/2026-04-29-pumpfun-live-payment-canary|2026-04-29 Pump.fun Live Payment Canary]] — earlier canary archive.
 - [[raw/post-deploy-audits/2026-04-27-marketplace-live-stability|2026-04-27 Marketplace Live Stability Audit]] — post-deploy audit context.

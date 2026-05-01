@@ -24,6 +24,7 @@ Pump.fun create/verify routes are deployed and auth-gated. Exact tx_signature bi
 - [[Solana Integration]]
 
 ## Recent Evidence
+- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-29-0803]]
 - [[raw/launch-evidence/2026-04-30-pumpfun-live-payment-evidence|2026-04-30 Pump.fun Live Payment Evidence]].
 - [[raw/tokenized-agent-flow/2026-04-27|2026-04-27 Tokenized Agent Flow Notes]].
 

@@ -80,3 +80,11 @@ Remaining risks:
 - `getTransaction` currently uses `maxSupportedTransactionVersion: 0`.
 - A future owner-approved controlled payment regression should verify deployed acceptance of a real valid Pump.fun payment and rejection of replay/wrong-signature cases.
 - Node dependency vulnerabilities remain for a separate dependency-audit phase.
+
+## Recent Evidence
+- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-25]]
+- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-26]]
+- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-27]]
+- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-28]]
+- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-29]]
+- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-30]]

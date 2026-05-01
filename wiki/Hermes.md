@@ -22,6 +22,14 @@ Hermes should maintain clean raw/wiki/system/learning/skills boundaries, keep wo
 - [[System Rules]]
 
 ## Recent Evidence
+- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-24-2332]]
+- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0000]]
+- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0401]]
+- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0728]]
+- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0731]]
+- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0800]]
+- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0806]]
+- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-1200]]
 - [[raw/hermes-runtime-audits/2026-04-27|2026-04-27 Hermes Runtime Audit]].
 - [[raw/2026-04-25-overnight-report|2026-04-25 Overnight Report]].
 
