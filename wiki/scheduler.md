@@ -1,3 +1,10 @@
+---
+type: wiki
+project: AgentAscend
+aliases:
+  - Scheduler
+---
+
 # Scheduler
 
 ## Summary
@@ -59,3 +66,9 @@ Execution Ledger/Scheduler Ledger is production-enabled and audited for the appr
 
 ## Notes
 This page was updated during the 2026-04-29 post-audit knowledge curation. Treat source-level facts separately from live-production verification.
+
+## 2026-04-30 Knowledge Graph Status Update
+- Raw launch evidence, tokenized-agent, scheduler/cronjob, deploy-readiness, security, and Hermes runtime notes now link back to this hub graph.
+- Exact Pump.fun `tx_signature` binding hardening is implemented and deployed at commit `453df65aec69f7aa95b20bb1752f7d3af97ad488`.
+- Replay-index migration remains pending and must not be run without owner approval.
+- Node dependency audit remains pending as a separate hardening phase.

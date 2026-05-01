@@ -1,0 +1,31 @@
+---
+type: wiki
+project: AgentAscend
+aliases:
+  - Cronjobs
+  - Scheduled Jobs
+---
+
+# Cronjobs
+
+## Summary
+Cronjobs are report-first recurring AgentAscend operating loops. They should produce findings and summaries, not perform high-risk actions without approval.
+
+## Key Current Status
+Approved safe scheduler jobs are enabled; held jobs remain intentionally disabled. No scheduler flags/jobs should change without explicit owner approval.
+
+## Important Links
+- [[scheduler|Scheduler]]
+- [[Execution Ledger]]
+- [[Ops Runbook]]
+- [[Hermes]]
+- [[Roadmap]]
+
+## Recent Evidence
+- [[raw/cronjob-audits/2026-04-27T11-20-17Z|2026-04-27 Cronjob Audit]].
+- [[raw/cronjob-repair-report/2026-04-27T11-20-17Z|2026-04-27 Cronjob Repair Report]].
+
+## Open Questions / Next Steps
+- Audit held jobs before enablement.
+- Do not call /jobs/run-due or manually run scheduler jobs during docs/preflight phases.
+- Keep token/payment/security jobs gated by Premium Strategic review.
