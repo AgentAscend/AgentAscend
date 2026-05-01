@@ -1,14 +1,14 @@
 # Pump.fun Live Payment Evidence Archive - 2026-04-30
 
 ## Status
-PARTIAL / OWNER-REPORTED COMPLETE, PUBLIC ON-CHAIN PURCHASE/CLAIM SIGNALS FOUND, PRODUCTION AGGREGATE DB AUDIT PASSED, VERIFY/UI EVIDENCE INCOMPLETE
+READY FOR SOFT LAUNCH / HARDENING ITEMS REMAIN
 
-This archive reconciles the existing AgentAscend launch-evidence notes, public blockchain read-only evidence, and a sanitized production aggregate DB audit. It does not run a new payment, does not call backend verify, does not create a payment intent, does not ask for wallet signing, and does not mutate production beyond read-only aggregate queries.
+This archive reconciles the existing AgentAscend launch-evidence notes, public blockchain read-only evidence, a sanitized production aggregate DB audit, a narrow admin-only read-only lookup by the known public purchase transaction signature, and owner-provided private-dashboard/UI confirmation. It does not run a new payment, does not call backend verify, does not create a payment intent, does not ask for wallet signing, and does not mutate production beyond read-only audit queries.
 
 ## Archive timestamp
-- Created/updated: 2026-05-01T01:41:25Z
-- Current production commit under audit: `3595864f71ad83051bc3d2b565c575afb895d70d`
-- Commit message: `Add admin launch readiness audit endpoint`
+- Created/updated: 2026-05-01T02:50:04Z
+- Current production commit under audit: `9e4015595a7854646f1095ffca6700cdfbd9d890`
+- Commit message: `Harden payment evidence entitlement matching`
 
 ## Public constants
 - Agent token mint: `9jwExoB9h42bNeUyCH8qBJAye3NJGrToiX62DQTEpump`
@@ -70,7 +70,50 @@ Owner-reported successful loop:
 - Creator dashboard accounting updated.
 - Creator claim payout was received.
 
-Classification: owner-reported. This archive does not yet contain sanitized frontend screenshots, sanitized network metadata, or production DB aggregate proof for those UI/backend states.
+Classification: owner-provided private-dashboard/UI confirmation plus public/admin evidence where separately noted. This archive does not contain screenshots or raw private dashboard exports.
+
+## Owner-Provided UI and Pump.fun Accounting Confirmation
+- Update timestamp: 2026-05-01T02:50:04Z.
+- Classification: owner-provided private-dashboard/UI confirmation. Hermes did not directly view private dashboard state and did not archive screenshots.
+- AgentAscend frontend ownership/unlock confirmation:
+  - The agent shows as owned after payment.
+  - The paid marketplace/install flow completed successfully.
+  - Ownership/unlock state is visible in the AgentAscend frontend.
+- Pump.fun creator/accounting confirmation:
+  - Pump.fun shows revenue earned.
+  - Pump.fun shows revenue claimed.
+  - Pump.fun shows buybacks pending.
+  - Pump.fun shows buybacks complete.
+  - The owner confirmed the displayed amounts are correct and in order.
+- Safety notes:
+  - No private wallet data, private keys, seed phrases, auth tokens, cookies, DB URLs, RPC URLs, QuickNode URLs, `txBase64`, signed transactions, raw request bodies, raw response bodies, or raw private-dashboard exports were provided or archived.
+  - This section records owner confirmation only; it does not claim Hermes independently viewed or verified private Pump.fun dashboard state.
+
+## Admin payment evidence lookup update
+- Update timestamp: 2026-05-01T02:50:04Z.
+- Endpoint used: `GET /admin/audits/payment-evidence/{tx_signature}`.
+- Implementation/deployment commit: `9e4015595a7854646f1095ffca6700cdfbd9d890`.
+- Lookup input: known public purchase/payment tx signature already archived in this file.
+- Safe lookup result summary:
+  - `payment_found`: true.
+  - `payment_id_present`: true.
+  - `payment_status`: `completed`.
+  - `payment_intent_found`: true.
+  - `payment_reference_present`: true.
+  - `payment_reference`: `pumpfun:agentascendai:f849ba8ff48243a98a58635bf005a4d8`.
+  - `payment_intent_status`: `completed`.
+  - `verification_status`: `verified`.
+  - `access_grant_present`: true.
+  - `duplicate_payment_tx_signature_group_count`: 0.
+  - `duplicate_payment_intent_tx_signature_group_count`: 0.
+  - Safety flags: raw metadata returned false, raw payloads returned false, DB URL printed false, secrets printed false, read-only mode true.
+- Nuance preserved:
+  - Exact payment/payment_intent/access_grant evidence for the public purchase tx is now present.
+  - Exact marketplace entitlement linkage for this specific tx was not proven by the lookup response: `marketplace_entitlement_present` false and `listing_scoped` false.
+  - Separate aggregate evidence still shows 3 marketplace entitlements and 0 duplicate listing/user entitlement groups.
+- Safety notes:
+  - The lookup was admin-authenticated and read-only.
+  - The archive records only sanitized fields. It does not include raw DB rows, user IDs, raw metadata, raw payloads, auth tokens, cookies, DB URLs, RPC URLs, private keys, seed phrases, `txBase64`, signed transactions, raw request bodies, or raw response bodies.
 
 ## Backend/API evidence already verified in adjacent audit
 - Backend health: `GET https://api.agentascend.ai/health` -> HTTP 200.
@@ -84,30 +127,28 @@ Classification: owner-reported. This archive does not yet contain sanitized fron
 ## Evidence checklist
 - Public purchase tx signature: PRESENT.
 - Public claim/settlement tx signature: PRESENT.
-- Payment reference: MISSING from archive.
+- Payment reference: PRESENT from admin-only read-only payment evidence lookup for the public purchase tx.
 - Amount `0.1 SOL / 100000000`: PRESENT in constants and public token delta.
 - Token mint: PRESENT.
 - Currency mint: PRESENT.
 - Pump.fun Agent Deposit/payment address: PRESENT.
-- Verify response safe summary: MISSING from archive.
-- Payment/access DB safe summary: PRESENT as sanitized production aggregate counts from admin-only audit endpoint; exact payment reference still missing.
-- Marketplace entitlement safe summary: PRESENT as sanitized production aggregate count; entitlement-to-reference detail remains limited by aggregate-only audit output.
-- Frontend unlock/ownership evidence: OWNER-REPORTED; sanitized artifact missing.
-- Pump.fun UI/revenue/accounting observation: OWNER-REPORTED; sanitized artifact missing.
-- Creator claim/payout observation: PUBLIC CLAIM TX PRESENT and owner-reported UI/accounting; sanitized UI artifact missing.
+- Verify response safe summary: PARTIAL via admin DB lookup; payment status `completed`, payment_intent status `completed`, payment_id present, and verification_status `verified`; original browser verify response body remains unavailable.
+- Payment/access DB safe summary: PRESENT as sanitized production aggregate counts and exact public tx lookup from admin-only audit endpoints.
+- Marketplace entitlement safe summary: PRESENT as sanitized production aggregate count; exact entitlement linkage for this tx was not proven by the tx lookup response.
+- Frontend unlock/ownership evidence: OWNER-PROVIDED private-dashboard/UI confirmation; screenshots/raw dashboard exports not archived.
+- Pump.fun UI/revenue/accounting observation: OWNER-PROVIDED private-dashboard/UI confirmation for revenue earned, revenue claimed, buybacks pending, buybacks complete, and correct amounts/order; screenshots/raw dashboard exports not archived.
+- Creator claim/payout observation: PUBLIC CLAIM TX PRESENT plus owner-provided Pump.fun accounting confirmation; screenshots/raw dashboard exports not archived.
 
-## Owner evidence checklist for final launch proof
-Provide only safe public/sanitized artifacts:
-1. Payment reference from the successful canary purchase.
-2. Safe backend verify response summary showing:
+## Remaining optional evidence checklist for stronger post-launch proof
+The archive is sufficient for soft-launch evidence, with hardening items remaining. Optional future artifacts should still be safe public/sanitized artifacts only:
+1. Original browser/backend verify response summary, if recoverable from owner-side notes, showing:
    - `status`: `payment_verified`
    - reference match: yes
    - `payment_id`: present
-3. Sanitized frontend ownership/unlock artifact, such as a screenshot or written note showing buyer ownership/unlock after backend verification.
-4. Sanitized Pump.fun UI/revenue/accounting artifact for the purchase.
-5. Sanitized creator claim/payout evidence if the owner wants to prove the full creator loop beyond the public claim transaction.
+2. Sanitized screenshots of AgentAscend ownership/unlock, if the owner wants visual rather than written owner confirmation.
+3. Sanitized Pump.fun UI/revenue/accounting screenshots, if the owner wants visual rather than written owner confirmation.
 
-Do not provide or paste private keys, seed phrases, auth tokens, cookies, DB URLs, RPC URLs, QuickNode URLs, `txBase64`, signed transaction payloads, wallet private data, raw request bodies, or raw response bodies.
+Do not provide or paste private keys, seed phrases, auth tokens, cookies, DB URLs, RPC URLs, QuickNode URLs, `txBase64`, signed transaction payloads, wallet private data, raw request bodies, raw response bodies, or raw private-dashboard exports.
 
 ## Aggregate audit helper update
 - Update timestamp: 2026-05-01T00:56:33Z
@@ -184,9 +225,11 @@ Marketplace:
 - Creator earnings events: 0.
 - Payout requests by status: none.
 
-DB aggregate audit classification: PASS for safe aggregate production DB/access/marketplace proof. Overall launch evidence remains PARTIAL because payment reference, safe verify response summary, sanitized frontend ownership/unlock evidence, and sanitized Pump.fun UI/revenue/accounting evidence are still missing from the archive.
+DB aggregate audit classification: PASS for safe aggregate production DB/access/marketplace proof. Overall launch evidence is now sufficient for a soft-launch decision because public purchase/claim signals, admin-only payment/access lookup, aggregate DB checks, and owner-provided UI/accounting confirmation are all archived. Hardening items still remain: original browser verify response body is unavailable, exact marketplace entitlement linkage for the specific tx was not proven by the tx lookup response, replay-index migration is not run, exact tx_signature binding hardening remains future work, and held scheduler jobs remain disabled pending separate audits.
 
 ## Launch-readiness conclusion for evidence
-PARTIAL.
+READY FOR SOFT LAUNCH / HARDENING ITEMS REMAIN.
 
-The public on-chain purchase and claim/settlement signatures are archived and consistent with the owner-reported successful canary. The admin-only aggregate endpoint produced safe production DB aggregate evidence showing 3 completed payment intents, 3 completed payments, 3 active access grants, and 3 marketplace entitlements, with no duplicate payment signatures or duplicate active grants detected. Final launch proof is still incomplete because the archive still lacks the exact payment reference, sanitized backend verify response summary, sanitized frontend ownership/unlock artifact, and sanitized Pump.fun UI/revenue/accounting artifact.
+The public on-chain purchase and claim/settlement signatures are archived and consistent with the owner-reported successful canary. The admin-only aggregate endpoint produced safe production DB aggregate evidence showing 3 completed payment intents, 3 completed payments, 3 active access grants, and 3 marketplace entitlements, with no duplicate payment signatures or duplicate active grants detected. The admin-only payment evidence lookup recovered the exact payment reference and confirmed completed payment/payment_intent state, payment_id presence, access_grant presence, and zero duplicate tx-signature groups for the known public purchase tx. The owner also provided private-dashboard/UI confirmation that the AgentAscend frontend ownership/unlock state is visible after payment and that Pump.fun revenue earned, revenue claimed, buybacks pending, buybacks complete, and displayed amounts are correct and in order.
+
+This is not a claim that every hardening item is complete. Remaining hardening/follow-up items are: original browser verify response body is not available, exact marketplace entitlement linkage for this specific tx was not proven by the tx lookup response, replay-index migration remains pending and owner-approved only, exact tx_signature binding remains future hardening, and held scheduler jobs remain disabled until separately audited and approved.
