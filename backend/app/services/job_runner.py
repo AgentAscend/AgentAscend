@@ -107,13 +107,19 @@ def _backend_health_check(job: dict[str, Any]) -> dict[str, Any]:
 
 
 def _payment_route_audit(job: dict[str, Any]) -> dict[str, Any]:
-    payments_path = PROJECT_ROOT / "backend/app/routes/payments.py"
-    text = payments_path.read_text(encoding="utf-8") if payments_path.exists() else ""
+    route_paths = [
+        PROJECT_ROOT / "backend/app/routes/payments.py",
+        PROJECT_ROOT / "backend/app/routes/pumpfun_payments.py",
+        PROJECT_ROOT / "backend/app/db/session.py",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in route_paths if path.exists())
     checks = {
-        "tx_signature_unique": "tx_signature" in text and "IntegrityError" in text,
-        "receiver_check": "receiver" in text.lower() or "SOLANA_RECEIVER_WALLET" in text,
-        "amount_check": "amount" in text.lower(),
-        "access_grant": "access" in text.lower(),
+        "tx_signature_replay_protection": "tx_signature" in text
+        and ("_require_unused_tx_signature" in text or "idx_payments_tx_signature" in text or "tx_signature TEXT UNIQUE" in text),
+        "receiver_check": "receiver" in text.lower() or "recipient_address" in text or "SOLANA_RECEIVER_WALLET" in text,
+        "amount_check": "amount" in text.lower() or "amount_smallest_unit" in text,
+        "access_grant": "access" in text.lower() or "access_grants" in text,
+        "pumpfun_invoice_validation": "validate_invoice_payment" in text or "validateInvoicePayment" in text,
     }
     missing = [name for name, ok in checks.items() if not ok]
     if missing:

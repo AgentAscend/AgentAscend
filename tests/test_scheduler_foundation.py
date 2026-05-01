@@ -534,3 +534,26 @@ def test_access_grant_integrity_metadata_is_aggregate_only(tmp_path):
         assert "user_id" not in metadata_text
     finally:
         session.DB_PATH = original_db_path
+
+
+def test_payment_route_audit_recognizes_pumpfun_replay_protection(tmp_path):
+    db_path = tmp_path / "agentascend-payment-route-audit.db"
+    original_db_path = session.DB_PATH
+    session.DB_PATH = db_path
+    try:
+        session.init_db()
+        from backend.app.services import job_runner
+
+        with session.get_connection() as conn:
+            job = conn.execute("SELECT * FROM scheduled_jobs WHERE job_type = ?", ("payment_route_audit",)).fetchone()
+            assert job is not None
+
+        result = job_runner.run_job_once(job["id"])
+        assert result["status"] == "success"
+        assert "Missing static signals: none" in result["summary"]
+
+        with session.get_connection() as conn:
+            finding_count = conn.execute("SELECT COUNT(*) FROM agent_findings WHERE source_job_id = ?", (job["id"],)).fetchone()[0]
+        assert finding_count == 0
+    finally:
+        session.DB_PATH = original_db_path
