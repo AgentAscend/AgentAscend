@@ -56,6 +56,10 @@ async def add_security_headers(request: Request, call_next):
         "Content-Security-Policy",
         "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
     )
+    response.headers.setdefault(
+        "Strict-Transport-Security",
+        "max-age=31536000; includeSubDomains",
+    )
     return response
 
 

@@ -26,3 +26,4 @@ def test_api_responses_include_security_headers(tmp_path, monkeypatch):
     assert response.headers["x-frame-options"] == "DENY"
     assert "geolocation=()" in response.headers["permissions-policy"]
     assert "default-src 'none'" in response.headers["content-security-policy"]
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
