@@ -204,12 +204,195 @@ def test_launch_readiness_audit_handles_missing_optional_tables(tmp_path, monkey
         _restore_db_path(original_db_path)
 
 
+def test_payment_evidence_lookup_requires_admin_token(tmp_path, monkeypatch):
+    client, original_db_path = _client_with_db(tmp_path, monkeypatch)
+    tx_signature = "public_tx_signature_1"
+    try:
+        response = client.get(f"/admin/audits/payment-evidence/{tx_signature}")
+        assert response.status_code == 403
+
+        response = client.get(
+            f"/admin/audits/payment-evidence/{tx_signature}",
+            headers={"X-Agent-Runtime-Token": "wrong-token"},
+        )
+        assert response.status_code == 403
+    finally:
+        _restore_db_path(original_db_path)
+
+
+def test_payment_evidence_lookup_returns_safe_evidence_shape(tmp_path, monkeypatch):
+    client, original_db_path = _client_with_db(tmp_path, monkeypatch)
+    tx_signature = "public_tx_signature_1"
+    reference = "pumpfun:safe-reference-1"
+    try:
+        session.init_db()
+        with session.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO payment_intents(
+                    reference, user_id, token, expires_at_epoch, status,
+                    tx_signature, verification_status, product_id, metadata_json
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    reference,
+                    "user-private-1",
+                    "SOL",
+                    4102444800,
+                    "completed",
+                    tx_signature,
+                    "payment_verified",
+                    "listing-safe-1",
+                    json.dumps({"leak": "raw-metadata-secret"}),
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO payments(
+                    user_id, amount, token, status, tx_signature,
+                    intent_reference, verification_status
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("user-private-1", 0.1, "SOL", "completed", tx_signature, reference, "payment_verified"),
+            )
+            payment_id = conn.execute("SELECT id FROM payments WHERE tx_signature = ?", (tx_signature,)).fetchone()[0]
+            conn.execute(
+                """
+                INSERT INTO access_grants(
+                    user_id, feature_name, status, payment_id, intent_reference,
+                    grant_scope, product_id, metadata_json
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "user-private-1",
+                    "marketplace_listing:listing-safe-1",
+                    "active",
+                    payment_id,
+                    reference,
+                    "marketplace_listing:listing-safe-1",
+                    "listing-safe-1",
+                    json.dumps({"leak": "raw-metadata-secret"}),
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO marketplace_entitlements(listing_id, user_id, installed_at)
+                VALUES(?, ?, datetime('now'))
+                """,
+                ("listing-safe-1", "user-private-1"),
+            )
+            conn.commit()
+
+        response = client.get(
+            f"/admin/audits/payment-evidence/{tx_signature}",
+            headers={"X-Agent-Runtime-Token": "test-admin-token"},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+
+        assert payload == {
+            "tx_signature_present": True,
+            "payment_found": True,
+            "payment_id_present": True,
+            "payment_status": "completed",
+            "payment_intent_found": True,
+            "payment_reference_present": True,
+            "payment_reference": reference,
+            "payment_intent_status": "completed",
+            "verification_status": "payment_verified",
+            "access_grant_present": True,
+            "marketplace_entitlement_present": True,
+            "listing_scoped": True,
+            "duplicate_payment_tx_signature_group_count": 0,
+            "duplicate_payment_intent_tx_signature_group_count": 0,
+            "safety": {
+                "raw_metadata_returned": False,
+                "raw_payloads_returned": False,
+                "db_url_printed": False,
+                "secrets_printed": False,
+                "read_only_mode": True,
+            },
+        }
+        text = json.dumps(payload)
+        assert "user-private-1" not in text
+        for marker in SENSITIVE_MARKERS:
+            assert marker not in text
+    finally:
+        _restore_db_path(original_db_path)
+
+
+def test_payment_evidence_lookup_missing_tx_returns_safe_not_found(tmp_path, monkeypatch):
+    client, original_db_path = _client_with_db(tmp_path, monkeypatch)
+    try:
+        session.init_db()
+        response = client.get(
+            "/admin/audits/payment-evidence/missing_public_tx_signature",
+            headers={"X-Agent-Runtime-Token": "test-admin-token"},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+
+        assert payload["tx_signature_present"] is True
+        assert payload["payment_found"] is False
+        assert payload["payment_id_present"] is False
+        assert payload["payment_intent_found"] is False
+        assert payload["payment_reference_present"] is False
+        assert payload["payment_reference"] is None
+        assert payload["access_grant_present"] is False
+        assert payload["marketplace_entitlement_present"] is False
+        assert payload["duplicate_payment_tx_signature_group_count"] == 0
+        assert payload["duplicate_payment_intent_tx_signature_group_count"] == 0
+        assert payload["safety"]["read_only_mode"] is True
+    finally:
+        _restore_db_path(original_db_path)
+
+
+def test_payment_evidence_lookup_does_not_write_to_db(tmp_path, monkeypatch):
+    client, original_db_path = _client_with_db(tmp_path, monkeypatch)
+    tx_signature = "public_tx_signature_no_write"
+    try:
+        session.init_db()
+        with session.get_connection() as conn:
+            before = {
+                "scheduled_jobs": conn.execute("SELECT COUNT(*) FROM scheduled_jobs").fetchone()[0],
+                "executions": conn.execute("SELECT COUNT(*) FROM executions").fetchone()[0],
+                "payment_intents": conn.execute("SELECT COUNT(*) FROM payment_intents").fetchone()[0],
+                "payments": conn.execute("SELECT COUNT(*) FROM payments").fetchone()[0],
+                "access_grants": conn.execute("SELECT COUNT(*) FROM access_grants").fetchone()[0],
+                "marketplace_entitlements": conn.execute("SELECT COUNT(*) FROM marketplace_entitlements").fetchone()[0],
+            }
+
+        response = client.get(
+            f"/admin/audits/payment-evidence/{tx_signature}",
+            headers={"X-Agent-Runtime-Token": "test-admin-token"},
+        )
+        assert response.status_code == 200
+
+        with session.get_connection() as conn:
+            after = {
+                "scheduled_jobs": conn.execute("SELECT COUNT(*) FROM scheduled_jobs").fetchone()[0],
+                "executions": conn.execute("SELECT COUNT(*) FROM executions").fetchone()[0],
+                "payment_intents": conn.execute("SELECT COUNT(*) FROM payment_intents").fetchone()[0],
+                "payments": conn.execute("SELECT COUNT(*) FROM payments").fetchone()[0],
+                "access_grants": conn.execute("SELECT COUNT(*) FROM access_grants").fetchone()[0],
+                "marketplace_entitlements": conn.execute("SELECT COUNT(*) FROM marketplace_entitlements").fetchone()[0],
+            }
+        assert after == before
+    finally:
+        _restore_db_path(original_db_path)
+
+
 def test_health_and_openapi_include_launch_readiness_audit_endpoint(tmp_path, monkeypatch):
     client, original_db_path = _client_with_db(tmp_path, monkeypatch)
     try:
         assert client.get("/health").status_code == 200
         openapi_response = client.get("/openapi.json")
         assert openapi_response.status_code == 200
-        assert "/admin/audits/launch-readiness/aggregate" in openapi_response.json()["paths"]
+        paths = openapi_response.json()["paths"]
+        assert "/admin/audits/launch-readiness/aggregate" in paths
+        assert "/admin/audits/payment-evidence/{tx_signature}" in paths
     finally:
         _restore_db_path(original_db_path)
