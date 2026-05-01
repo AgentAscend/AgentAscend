@@ -132,38 +132,44 @@ def _payment_route_audit(job: dict[str, Any]) -> dict[str, Any]:
 
 def _access_grant_integrity_check(_job: dict[str, Any]) -> dict[str, Any]:
     with get_connection() as conn:
-        duplicate_rows = conn.execute(
+        duplicate_group_count = conn.execute(
             """
-            SELECT user_id, feature_name, COUNT(*) AS count
-            FROM access_grants
-            WHERE status = 'active'
-            GROUP BY user_id, feature_name
-            HAVING COUNT(*) > 1
+            SELECT COUNT(*)
+            FROM (
+                SELECT 1
+                FROM access_grants
+                WHERE status = 'active'
+                GROUP BY user_id, feature_name
+                HAVING COUNT(*) > 1
+            ) AS duplicate_groups
             """
-        ).fetchall()
+        ).fetchone()[0]
     return {
         "status": "success",
-        "summary": f"Access grant integrity check complete. Duplicate active grants: {len(duplicate_rows)}",
-        "metadata": {"duplicate_active_grants": [dict(row) for row in duplicate_rows[:20]]},
+        "summary": f"Access grant integrity check complete. Duplicate active grant groups: {duplicate_group_count}",
+        "metadata": {"duplicate_active_grant_group_count": int(duplicate_group_count)},
     }
 
 
 def _failed_payment_replay_review(_job: dict[str, Any]) -> dict[str, Any]:
     with get_connection() as conn:
         failed_count = conn.execute("SELECT COUNT(*) FROM payments WHERE status != 'completed'").fetchone()[0]
-        duplicate_tx = conn.execute(
+        duplicate_tx_group_count = conn.execute(
             """
-            SELECT tx_signature, COUNT(*) AS count
-            FROM payments
-            WHERE tx_signature IS NOT NULL AND tx_signature != ''
-            GROUP BY tx_signature
-            HAVING COUNT(*) > 1
+            SELECT COUNT(*)
+            FROM (
+                SELECT 1
+                FROM payments
+                WHERE tx_signature IS NOT NULL AND tx_signature != ''
+                GROUP BY tx_signature
+                HAVING COUNT(*) > 1
+            ) AS duplicate_groups
             """
-        ).fetchall()
+        ).fetchone()[0]
     return {
         "status": "success",
-        "summary": f"Payment replay review complete. Failed/non-completed payments: {failed_count}; duplicate tx signatures: {len(duplicate_tx)}",
-        "metadata": {"failed_payment_count": failed_count, "duplicate_tx_signatures": [dict(row) for row in duplicate_tx[:20]]},
+        "summary": f"Payment replay review complete. Failed/non-completed payments: {failed_count}; duplicate tx signature groups: {duplicate_tx_group_count}",
+        "metadata": {"failed_payment_count": int(failed_count), "duplicate_tx_signature_group_count": int(duplicate_tx_group_count)},
     }
 
 

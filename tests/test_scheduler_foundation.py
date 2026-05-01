@@ -206,11 +206,11 @@ def test_scheduler_ledger_metadata_builder_rejects_sensitive_result_keys():
         "summary": "safe summary body must not be stored",
         "error": "raw error must not be stored",
         "metadata": {
-            "token": "should-not-pass-through",
+            "token": "should...ough",
             "authorization": "Bearer should-not-pass-through",
-            "api_key": "should-not-pass-through",
-            "secret": "should-not-pass-through",
-            "password": "should-not-pass-through",
+            "api_key": "should...ough",
+            "secret": "should...ough",
+            "password": "should...ough",
             "database_url": "should-not-pass-through",
             "private_key": "should-not-pass-through",
             "raw_request": "should-not-pass-through",
@@ -461,5 +461,76 @@ def test_backend_health_uses_agentascend_health_url_and_records_metadata(tmp_pat
         assert metadata["url"] == "https://api.agentascend.ai/health"
         assert metadata["active_url"] == "https://api.agentascend.ai/health"
         assert metadata["url_source"] == "AGENTASCEND_HEALTH_URL"
+    finally:
+        session.DB_PATH = original_db_path
+
+
+
+def test_payment_replay_review_metadata_is_aggregate_only(tmp_path):
+    db_path = tmp_path / "agentascend-payment-replay-audit.db"
+    original_db_path = session.DB_PATH
+    session.DB_PATH = db_path
+    try:
+        session.init_db()
+        from backend.app.services import job_runner
+
+        with session.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO payments(user_id, amount, token, status, tx_signature)
+                VALUES ('user_private_a', 1.0, 'SOL', 'failed', 'private_tx_signature_value')
+                """
+            )
+            conn.commit()
+            job = conn.execute("SELECT * FROM scheduled_jobs WHERE job_type = ?", ("failed_payment_replay_review",)).fetchone()
+            assert job is not None
+
+        result = job_runner.run_job_once(job["id"])
+        assert result["status"] == "success"
+
+        with session.get_connection() as conn:
+            run = conn.execute("SELECT metadata_json FROM job_runs WHERE id = ?", (result["run_id"],)).fetchone()
+        metadata = json.loads(run["metadata_json"])
+        assert metadata["failed_payment_count"] == 1
+        assert metadata["duplicate_tx_signature_group_count"] == 0
+        metadata_text = json.dumps(metadata).lower()
+        assert "private_tx_signature_value" not in metadata_text
+        assert "user_private" not in metadata_text
+    finally:
+        session.DB_PATH = original_db_path
+
+
+def test_access_grant_integrity_metadata_is_aggregate_only(tmp_path):
+    db_path = tmp_path / "agentascend-access-grant-audit.db"
+    original_db_path = session.DB_PATH
+    session.DB_PATH = db_path
+    try:
+        session.init_db()
+        from backend.app.services import job_runner
+
+        with session.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO access_grants(user_id, feature_name, status)
+                VALUES
+                    ('private_user_a', 'private_feature', 'active'),
+                    ('private_user_a', 'private_feature', 'active')
+                """
+            )
+            conn.commit()
+            job = conn.execute("SELECT * FROM scheduled_jobs WHERE job_type = ?", ("access_grant_integrity_check",)).fetchone()
+            assert job is not None
+
+        result = job_runner.run_job_once(job["id"])
+        assert result["status"] == "success"
+
+        with session.get_connection() as conn:
+            run = conn.execute("SELECT metadata_json FROM job_runs WHERE id = ?", (result["run_id"],)).fetchone()
+        metadata = json.loads(run["metadata_json"])
+        assert metadata["duplicate_active_grant_group_count"] == 1
+        metadata_text = json.dumps(metadata).lower()
+        assert "private_user" not in metadata_text
+        assert "private_feature" not in metadata_text
+        assert "user_id" not in metadata_text
     finally:
         session.DB_PATH = original_db_path
