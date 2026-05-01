@@ -509,6 +509,7 @@ def test_pumpfun_verify_uses_exact_stored_invoice_params_and_grants_access(clien
             "memo": build_calls[0]["memo"],
             "startTime": build_calls[0]["startTime"],
             "endTime": build_calls[0]["endTime"],
+            "txSignature": "5" * 88,
         }
     ]
 

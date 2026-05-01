@@ -1,4 +1,4 @@
-import type { InvoiceParamsInput, ValidationResult } from "./types.js";
+import type { InvoiceParamsInput, ValidateInvoicePaymentInput, ValidationResult } from "./types.js";
 
 const forbiddenInputFields = ["rpcUrl", "privateKey", "secretKey"] as const;
 
@@ -18,6 +18,10 @@ function isValidUnixTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && Number.isFinite(value) && value > 0;
 }
 
+function isLikelyTransactionSignature(value: unknown): value is string {
+  return typeof value === "string" && /^[1-9A-HJ-NP-Za-km-z]{80,100}$/.test(value.trim());
+}
+
 export function validateBuildPaymentTransactionInput(
   input: Record<string, unknown>
 ): ValidationResult<InvoiceParamsInput> {
@@ -26,8 +30,21 @@ export function validateBuildPaymentTransactionInput(
 
 export function validateInvoicePaymentInput(
   input: Record<string, unknown>
-): ValidationResult<InvoiceParamsInput> {
-  return validateInvoiceParams(input);
+): ValidationResult<ValidateInvoicePaymentInput> {
+  const invoiceParams = validateInvoiceParams(input);
+  if (invoiceParams.ok === false) {
+    return { ok: false, errorCode: invoiceParams.errorCode };
+  }
+  if (!isLikelyTransactionSignature(input.txSignature)) {
+    return { ok: false, errorCode: "INVALID_TXSIGNATURE" };
+  }
+  return {
+    ok: true,
+    value: {
+      ...invoiceParams.value,
+      txSignature: input.txSignature.trim()
+    }
+  };
 }
 
 function validateInvoiceParams(input: Record<string, unknown>): ValidationResult<InvoiceParamsInput> {

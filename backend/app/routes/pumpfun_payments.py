@@ -480,10 +480,8 @@ def verify_pumpfun_payment(payload: PumpfunVerifyRequest, authorization: str | N
         start_time=int(row["start_time"]),
         end_time=int(row["end_time"]),
     )
+    helper_payload["txSignature"] = payload.tx_signature
 
-    # Current Pump.fun helper semantics validate the immutable invoice terms.
-    # The submitted tx_signature is still recorded for local replay/accounting;
-    # add an exact signature-to-invoice cross-check later if the SDK exposes it.
     helper_result = pumpfun_node_helper.validate_invoice_payment(helper_payload)
     if not helper_result.get("ok"):
         _safe_helper_error()

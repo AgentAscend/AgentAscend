@@ -7,6 +7,7 @@ export type SafeErrorCode =
   | "INVALID_STARTTIME"
   | "INVALID_ENDTIME"
   | "INVALID_TIME_RANGE"
+  | "INVALID_TXSIGNATURE"
   | "FORBIDDEN_FIELD"
   | "MISSING_SOLANA_RPC_URL"
   | "BUILD_PAYMENT_TRANSACTION_FAILED"
@@ -25,6 +26,10 @@ export interface InvoiceParamsInput {
   endTime: number;
 }
 
+export interface ValidateInvoicePaymentInput extends InvoiceParamsInput {
+  txSignature: string;
+}
+
 export type ValidationResult<T> =
   | { ok: true; value: T }
   | { ok: false; errorCode: SafeErrorCode };
@@ -34,5 +39,5 @@ export type BuildPaymentTransactionResult =
   | { ok: false; errorCode: SafeErrorCode };
 
 export type ValidateInvoicePaymentResult =
-  | { ok: true; verified: boolean; invoiceId?: string }
+  | { ok: true; verified: boolean; invoiceId?: string; signatureBound: boolean }
   | { ok: false; errorCode: SafeErrorCode };
