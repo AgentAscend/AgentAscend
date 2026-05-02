@@ -57,7 +57,7 @@ This page was created/updated during the 2026-04-25 overnight knowledge/runtime 
 - Raw launch evidence, tokenized-agent, scheduler/cronjob, deploy-readiness, security, and Hermes runtime notes now link back to this hub graph.
 - Exact Pump.fun `tx_signature` binding hardening is implemented and deployed at commit `453df65aec69f7aa95b20bb1752f7d3af97ad488`.
 - Replay-index preflight passed on 2026-05-02; DDL is not needed now because existing valid indexes/constraints already satisfy the hardening target.
-- Node dependency audit remains pending as the next separate hardening phase.
+- Node dependency audit completed read-only on 2026-05-02; dependency cleanup remains pending and should be split into dev-only cleanup first, then runtime Pump.fun/Solana compatibility review.
 
 ## Exact tx_signature Binding Hardening — Completed 2026-04-30
 Status: implemented and deployed.
@@ -96,3 +96,11 @@ Remaining risks:
 - Existing production constraints/indexes must not be dropped unless separately inspected and approved.
 - If future replay-index DDL is ever needed, concurrent index create/drop statements cannot run inside normal transactions.
 - Remaining hardening focus moves to Node dependency audit/cleanup, controlled payment regression, optional held scheduler enablement decisions, multi-agent architecture setup, and frontend/product polish.
+
+## 2026-05-02 Node Helper Dependency Audit Update
+- Read-only `npm audit --json`, `npm outdated --json`, and selected `npm view` checks completed for `node-payment-helper`.
+- No package files were changed, no packages were installed/upgraded, and `npm audit fix` was not run.
+- Current audit summary remains 16 vulnerabilities: 4 high and 12 moderate.
+- Runtime risk centers on Pump.fun SDK / Solana dependency chain; npm audit suggests unsafe incompatible downgrades, so do not auto-fix.
+- Dev/test risk centers on Vitest/Vite/Vite-node/esbuild; a dev-only update is the preferred first cleanup candidate after explicit owner approval.
+- Runtime Pump.fun/Solana updates require a separate compatibility review because changes can affect transaction building, invoice PDA derivation, signature binding, and `validateInvoicePayment`.
