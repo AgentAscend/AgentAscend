@@ -486,7 +486,7 @@ def _task_queue_worker(_job: dict[str, Any]) -> dict[str, Any]:
     processed = 0
     completed = 0
     failed = 0
-    output_ids: list[str] = []
+    output_count = 0
 
     for row in rows:
         task = dict(row)
@@ -545,7 +545,7 @@ def _task_queue_worker(_job: dict[str, Any]) -> dict[str, Any]:
                 )
                 conn.commit()
             completed += 1
-            output_ids.append(output_id)
+            output_count += 1
         except Exception as exc:  # noqa: BLE001 - per-task failures should not crash the queue worker
             safe_error = _safe_error_message(exc)
             with get_connection() as conn:
@@ -569,8 +569,11 @@ def _task_queue_worker(_job: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "status": "success",
-        "summary": f"Task queue worker processed={processed}, completed={completed}, failed={failed}",
-        "metadata": {"processed": processed, "completed": completed, "failed": failed, "output_ids": output_ids},
+        "summary": (
+            f"Task queue worker processed={processed}, completed={completed}, "
+            f"failed={failed}, output_count={output_count}"
+        ),
+        "metadata": {"processed": processed, "completed": completed, "failed": failed, "output_count": output_count},
     }
 
 

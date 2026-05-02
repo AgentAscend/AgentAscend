@@ -264,6 +264,146 @@ def _artifacts_for_execution(execution_id: str):
         ).fetchall()
 
 
+def _job_run_metadata(run_id: str) -> dict:
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        run = conn.execute("SELECT metadata_json FROM job_runs WHERE id=?", (run_id,)).fetchone()
+    assert run is not None
+    return json.loads(run["metadata_json"])
+
+
+def _safety_table_counts() -> dict[str, int]:
+    import backend.app.db.session as session
+
+    tables = ["payments", "payment_intents", "access_grants", "marketplace_entitlements"]
+    with session.get_connection() as conn:
+        return {table: conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"] for table in tables}
+
+
+def _assert_task_worker_metadata_safe(metadata: dict, *, processed: int, completed: int, failed: int, output_count: int):
+    assert metadata == {
+        "processed": processed,
+        "completed": completed,
+        "failed": failed,
+        "output_count": output_count,
+    }
+    metadata_text = json.dumps(metadata, sort_keys=True).lower()
+    for forbidden in [
+        "output_ids",
+        "task_id",
+        "output_id",
+        "user_id",
+        "wallet",
+        "payment",
+        "signature",
+        "metadata_json",
+        "payload_json",
+        "database_url",
+        "rpc_url",
+        "authorization",
+        "bearer",
+        "token",
+        "secret",
+        "raw",
+    ]:
+        assert forbidden not in metadata_text
+
+
+def test_task_queue_worker_empty_queue_metadata_is_aggregate_only(client: TestClient):
+    from backend.app.services.job_runner import run_job_once
+
+    before_counts = _safety_table_counts()
+    run = run_job_once(_task_worker_job_id())
+    assert run["status"] == "success"
+    assert "processed=0" in run["summary"]
+    assert "completed=0" in run["summary"]
+    assert "failed=0" in run["summary"]
+    assert "output_count=0" in run["summary"]
+
+    metadata = _job_run_metadata(run["run_id"])
+    _assert_task_worker_metadata_safe(metadata, processed=0, completed=0, failed=0, output_count=0)
+    assert _safety_table_counts() == before_counts
+
+
+def test_task_queue_worker_success_metadata_is_aggregate_only(client: TestClient, monkeypatch):
+    import backend.app.routes.platform as platform
+
+    monkeypatch.setattr(platform, "_trigger_task_queue_worker", lambda: None)
+    user_id, token = _signup(client, "tasks-worker-aggregate-success@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Aggregate success task", "type": "analysis", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    from backend.app.services.job_runner import run_job_once
+
+    before_counts = _safety_table_counts()
+    run = run_job_once(_task_worker_job_id())
+    assert run["status"] == "success"
+    assert "processed=1" in run["summary"]
+    assert "completed=1" in run["summary"]
+    assert "failed=0" in run["summary"]
+    assert "output_count=1" in run["summary"]
+
+    metadata = _job_run_metadata(run["run_id"])
+    _assert_task_worker_metadata_safe(metadata, processed=1, completed=1, failed=0, output_count=1)
+    metadata_text = json.dumps(metadata, sort_keys=True).lower()
+    assert task_id.lower() not in metadata_text
+    assert user_id.lower() not in metadata_text
+
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        task = conn.execute("SELECT status FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        output_count = conn.execute("SELECT COUNT(*) AS count FROM outputs WHERE task_id=?", (task_id,)).fetchone()["count"]
+    assert task["status"] == "completed"
+    assert output_count == 1
+    assert _safety_table_counts() == before_counts
+
+
+def test_task_queue_worker_failure_metadata_is_aggregate_only(client: TestClient, monkeypatch):
+    import backend.app.routes.platform as platform
+
+    monkeypatch.setattr(platform, "_trigger_task_queue_worker", lambda: None)
+    user_id, token = _signup(client, "tasks-worker-aggregate-failure@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Aggregate failure task", "type": "fail", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    from backend.app.services.job_runner import run_job_once
+
+    before_counts = _safety_table_counts()
+    run = run_job_once(_task_worker_job_id())
+    assert run["status"] == "success"
+    assert "processed=1" in run["summary"]
+    assert "completed=0" in run["summary"]
+    assert "failed=1" in run["summary"]
+    assert "output_count=0" in run["summary"]
+
+    metadata = _job_run_metadata(run["run_id"])
+    _assert_task_worker_metadata_safe(metadata, processed=1, completed=0, failed=1, output_count=0)
+    metadata_text = json.dumps(metadata, sort_keys=True).lower()
+    assert task_id.lower() not in metadata_text
+    assert user_id.lower() not in metadata_text
+
+    import backend.app.db.session as session
+
+    with session.get_connection() as conn:
+        task = conn.execute("SELECT status FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        output_count = conn.execute("SELECT COUNT(*) AS count FROM outputs WHERE task_id=?", (task_id,)).fetchone()["count"]
+    assert task["status"] == "failed"
+    assert output_count == 0
+    assert _safety_table_counts() == before_counts
+
+
 def test_scheduler_worker_does_not_write_lifecycle_events_when_execution_ledger_disabled(client: TestClient, monkeypatch):
     monkeypatch.delenv("EXECUTION_LEDGER_ENABLED", raising=False)
     _user_id, token = _signup(client, "tasks-ledger-worker-disabled@example.com")
