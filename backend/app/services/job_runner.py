@@ -270,20 +270,37 @@ def _git_status_counts(lines: list[str]) -> dict[str, int]:
     return counts
 
 
+def _git_unavailable_result() -> dict[str, Any]:
+    return {
+        "status": "failed",
+        "summary": "Git status summary unavailable: git executable not available in runtime.",
+        "metadata": {
+            "branch_known": False,
+            "changed_count": 0,
+            "command_used": "unavailable",
+            "failure_reason": "git_unavailable",
+            "git_available": False,
+        },
+    }
+
+
 def _git_status_summary(_job: dict[str, Any]) -> dict[str, Any]:
     command_used = "default"
-    code, output = _run_readonly_command(["git", "status", "--short"], timeout=15)
-    branch_code, branch = _run_readonly_command(["git", "branch", "--show-current"], timeout=15)
+    try:
+        code, output = _run_readonly_command(["git", "status", "--short"], timeout=15)
+        branch_code, branch = _run_readonly_command(["git", "branch", "--show-current"], timeout=15)
 
-    if code != 0 or branch_code != 0:
-        # Some environments run scheduler jobs under a different OS user than the
-        # repo owner, which triggers Git's dubious ownership guard. Use a
-        # per-command safe.directory override so this read-only monitoring job can
-        # still run without mutating global git config.
-        command_used = "safe_directory_override"
-        safe_dir = str(PROJECT_ROOT)
-        code, output = _run_readonly_command(["git", "-c", f"safe.directory={safe_dir}", "status", "--short"], timeout=15)
-        branch_code, branch = _run_readonly_command(["git", "-c", f"safe.directory={safe_dir}", "branch", "--show-current"], timeout=15)
+        if code != 0 or branch_code != 0:
+            # Some environments run scheduler jobs under a different OS user than the
+            # repo owner, which triggers Git's dubious ownership guard. Use a
+            # per-command safe.directory override so this read-only monitoring job can
+            # still run without mutating global git config.
+            command_used = "safe_directory_override"
+            safe_dir = str(PROJECT_ROOT)
+            code, output = _run_readonly_command(["git", "-c", f"safe.directory={safe_dir}", "status", "--short"], timeout=15)
+            branch_code, branch = _run_readonly_command(["git", "-c", f"safe.directory={safe_dir}", "branch", "--show-current"], timeout=15)
+    except FileNotFoundError:
+        return _git_unavailable_result()
 
     changed = [line for line in output.splitlines() if line.strip()]
     status = "success" if code == 0 and branch_code == 0 else "failed"
@@ -292,6 +309,7 @@ def _git_status_summary(_job: dict[str, Any]) -> dict[str, Any]:
         "branch_known": branch_name != "unknown",
         "changed_count": len(changed),
         "command_used": command_used,
+        "git_available": True,
         **_git_status_counts(changed),
     }
     return {

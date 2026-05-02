@@ -104,6 +104,7 @@ def test_git_status_summary_metadata_is_aggregate_only(monkeypatch):
         "changed_count",
         "command_used",
         "deleted_count",
+        "git_available",
         "modified_count",
         "other_status_count",
         "renamed_count",
@@ -115,6 +116,7 @@ def test_git_status_summary_metadata_is_aggregate_only(monkeypatch):
         "changed_count": 6,
         "command_used": "default",
         "deleted_count": 1,
+        "git_available": True,
         "modified_count": 1,
         "other_status_count": 1,
         "renamed_count": 1,
@@ -127,6 +129,35 @@ def test_git_status_summary_metadata_is_aggregate_only(monkeypatch):
     assert ".env.local" not in metadata_text
     assert "old-secret-name.md" not in metadata_text
     assert calls == [["git", "status", "--short"], ["git", "branch", "--show-current"]]
+
+
+def test_git_status_summary_git_unavailable_fails_closed_with_sanitized_metadata(monkeypatch):
+    from backend.app.services import job_runner
+
+    def fake_run_readonly_command(args, timeout=20):
+        raise FileNotFoundError("git missing at /raw/private/path with private-marker")
+
+    monkeypatch.setattr(job_runner, "_run_readonly_command", fake_run_readonly_command)
+
+    result = job_runner._git_status_summary({"id": "default-git-status-summary"})
+
+    assert result["status"] == "failed"
+    assert result["summary"] == "Git status summary unavailable: git executable not available in runtime."
+    assert result["metadata"] == {
+        "branch_known": False,
+        "changed_count": 0,
+        "command_used": "unavailable",
+        "failure_reason": "git_unavailable",
+        "git_available": False,
+    }
+    result_text = json.dumps(result)
+    assert "FileNotFoundError" not in result_text
+    assert "git missing" not in result_text
+    assert "raw/private/path" not in result_text
+    assert "private-marker" not in result_text
+    assert "stderr" not in result_text
+    assert "stdout" not in result_text
+    assert "diff" not in result_text.lower()
 
 
 def test_git_status_summary_failure_does_not_send_external_alert_or_change_enabled(tmp_path, monkeypatch):
