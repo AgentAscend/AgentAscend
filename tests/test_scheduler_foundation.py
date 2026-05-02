@@ -67,6 +67,121 @@ def test_run_job_once_records_successful_run(tmp_path):
         session.DB_PATH = original_db_path
 
 
+def test_git_status_summary_metadata_is_aggregate_only(monkeypatch):
+    from backend.app.services import job_runner
+
+    calls = []
+
+    def fake_run_readonly_command(args, timeout=20):
+        calls.append(args)
+        if args == ["git", "status", "--short"]:
+            return 0, "\n".join(
+                [
+                    " M backend/app/services/job_runner.py",
+                    "A  tests/test_scheduler_foundation.py",
+                    " D raw/private-note.md",
+                    "R  old-secret-name.md -> new-secret-name.md",
+                    "?? .env.local",
+                    "!! ignored.tmp",
+                ]
+            )
+        if args == ["git", "branch", "--show-current"]:
+            return 0, "main"
+        raise AssertionError(f"unexpected command: {args}")
+
+    monkeypatch.setattr(job_runner, "_run_readonly_command", fake_run_readonly_command)
+
+    result = job_runner._git_status_summary({"id": "default-git-status-summary"})
+
+    assert result["status"] == "success"
+    assert result["summary"] == "Git branch=main; changed files=6"
+    assert "backend/app/services/job_runner.py" not in result["summary"]
+    assert ".env.local" not in result["summary"]
+    metadata = result["metadata"]
+    assert set(metadata) == {
+        "added_count",
+        "branch_known",
+        "changed_count",
+        "command_used",
+        "deleted_count",
+        "modified_count",
+        "other_status_count",
+        "renamed_count",
+        "untracked_count",
+    }
+    assert metadata == {
+        "added_count": 1,
+        "branch_known": True,
+        "changed_count": 6,
+        "command_used": "default",
+        "deleted_count": 1,
+        "modified_count": 1,
+        "other_status_count": 1,
+        "renamed_count": 1,
+        "untracked_count": 1,
+    }
+    metadata_text = json.dumps(metadata)
+    assert "changed" not in metadata
+    assert "backend/app/services/job_runner.py" not in metadata_text
+    assert "raw/private-note.md" not in metadata_text
+    assert ".env.local" not in metadata_text
+    assert "old-secret-name.md" not in metadata_text
+    assert calls == [["git", "status", "--short"], ["git", "branch", "--show-current"]]
+
+
+def test_git_status_summary_failure_does_not_send_external_alert_or_change_enabled(tmp_path, monkeypatch):
+    db_path = tmp_path / "agentascend-git-status-failed.db"
+    original_db_path = session.DB_PATH
+    session.DB_PATH = db_path
+    try:
+        session.init_db()
+        from backend.app.services import job_runner
+
+        commands = []
+        sent_messages = []
+
+        def fake_run_readonly_command(args, timeout=20):
+            commands.append(args)
+            return 1, "fatal: git unavailable for raw/private/path"
+
+        monkeypatch.setattr(job_runner, "_run_readonly_command", fake_run_readonly_command)
+        monkeypatch.setattr(
+            job_runner,
+            "_send_telegram_notification",
+            lambda message: sent_messages.append(message) or {"enabled": True, "sent": True},
+        )
+
+        with session.get_connection() as conn:
+            job = conn.execute("SELECT * FROM scheduled_jobs WHERE job_type = ?", ("git_status_summary",)).fetchone()
+            assert job is not None
+            enabled_before = job["enabled"]
+
+        result = job_runner.run_job_once(job["id"])
+        assert result["status"] == "failed"
+        assert sent_messages == []
+
+        with session.get_connection() as conn:
+            run = conn.execute(
+                "SELECT metadata_json, output_summary FROM job_runs WHERE id = ?",
+                (result["run_id"],),
+            ).fetchone()
+            enabled_after = conn.execute("SELECT enabled FROM scheduled_jobs WHERE id = ?", (job["id"],)).fetchone()[0]
+
+        metadata = json.loads(run["metadata_json"])
+        assert "changed" not in metadata
+        assert "telegram_failure_alert" not in metadata
+        assert metadata["changed_count"] == 1
+        assert metadata["branch_known"] is False
+        metadata_text = json.dumps(metadata)
+        assert "raw/private/path" not in metadata_text
+        assert "raw/private/path" not in run["output_summary"]
+        assert enabled_after == enabled_before
+        assert all("diff" not in command for args in commands for command in args)
+        assert all(command not in {"add", "commit", "push", "pull", "fetch", "reset", "clean", "checkout"} for args in commands for command in args)
+    finally:
+        session.DB_PATH = original_db_path
+
+
 def test_scheduler_execution_ledger_stays_off_without_narrow_flag(tmp_path, monkeypatch):
     monkeypatch.setenv("EXECUTION_LEDGER_ENABLED", "true")
     monkeypatch.delenv("SCHEDULER_EXECUTION_LEDGER_ENABLED", raising=False)

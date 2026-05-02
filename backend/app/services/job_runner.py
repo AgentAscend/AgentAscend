@@ -244,6 +244,32 @@ def _integration_drift_check(_job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _git_status_counts(lines: list[str]) -> dict[str, int]:
+    counts = {
+        "added_count": 0,
+        "deleted_count": 0,
+        "modified_count": 0,
+        "other_status_count": 0,
+        "renamed_count": 0,
+        "untracked_count": 0,
+    }
+    for line in lines:
+        status_code = line[:2]
+        if status_code == "??":
+            counts["untracked_count"] += 1
+        elif "R" in status_code:
+            counts["renamed_count"] += 1
+        elif "A" in status_code:
+            counts["added_count"] += 1
+        elif "D" in status_code:
+            counts["deleted_count"] += 1
+        elif "M" in status_code:
+            counts["modified_count"] += 1
+        else:
+            counts["other_status_count"] += 1
+    return counts
+
+
 def _git_status_summary(_job: dict[str, Any]) -> dict[str, Any]:
     command_used = "default"
     code, output = _run_readonly_command(["git", "status", "--short"], timeout=15)
@@ -261,10 +287,17 @@ def _git_status_summary(_job: dict[str, Any]) -> dict[str, Any]:
 
     changed = [line for line in output.splitlines() if line.strip()]
     status = "success" if code == 0 and branch_code == 0 else "failed"
+    branch_name = branch.strip() if branch_code == 0 and branch.strip() else "unknown"
+    metadata = {
+        "branch_known": branch_name != "unknown",
+        "changed_count": len(changed),
+        "command_used": command_used,
+        **_git_status_counts(changed),
+    }
     return {
         "status": status,
-        "summary": f"Git branch={branch.strip() or 'unknown'}; changed files={len(changed)}",
-        "metadata": {"changed": changed[:100], "command_used": command_used},
+        "summary": f"Git branch={branch_name}; changed files={len(changed)}",
+        "metadata": metadata,
     }
 
 
@@ -663,7 +696,8 @@ def run_job_once(job_id: str) -> dict[str, Any]:
 
     if status != "success":
         metadata = dict(metadata)
-        metadata["telegram_failure_alert"] = _send_failed_job_alert(job, run_id, summary, error)
+        if job["job_type"] != "git_status_summary":
+            metadata["telegram_failure_alert"] = _send_failed_job_alert(job, run_id, summary, error)
 
     finished_at = utc_now_iso()
     with get_connection() as conn:
