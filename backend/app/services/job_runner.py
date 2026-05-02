@@ -337,18 +337,19 @@ def _todo_fixme_scan(_job: dict[str, Any]) -> dict[str, Any]:
 def _telegram_status_summary(job: dict[str, Any]) -> dict[str, Any]:
     recent_runs = _count_rows("job_runs", "started_at >= ?", ((datetime.now(UTC) - timedelta(days=1)).replace(microsecond=0).isoformat(),))
     summary = f"AgentAscend scheduler daily summary: {recent_runs} job runs recorded in the last 24h."
-    notification = _send_telegram_notification(summary)
-    metadata = {"telegram_notification": notification}
-    if notification.get("enabled") and not notification.get("sent"):
-        _record_finding(
-            job["id"],
-            "telegram_notification",
-            "info",
-            "Telegram status summary could not be sent",
-            notification.get("error") or "Telegram credentials/chat id not configured.",
-            "Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID if scheduler-originated Telegram delivery is desired.",
-            notification,
-        )
+    config = load_runtime_config()
+    send_enabled = bool(config.get("telegram_status_send_enabled"))
+    metadata: dict[str, Any] = {
+        "mode": "send_enabled" if send_enabled else "report_only",
+        "recent_runs_24h": recent_runs,
+        "external_message_sent": False,
+        "send_enabled": send_enabled,
+    }
+    if send_enabled:
+        notification = _send_telegram_notification(summary)
+        sent = bool(notification.get("sent"))
+        metadata["external_message_sent"] = sent
+        metadata["send_result"] = "sent" if sent else _safe_telegram_send_result(notification)
     return {"status": "success", "summary": summary, "metadata": metadata}
 
 
@@ -626,6 +627,14 @@ def _task_queue_worker(_job: dict[str, Any]) -> dict[str, Any]:
         ),
         "metadata": {"processed": processed, "completed": completed, "failed": failed, "output_count": output_count},
     }
+
+
+def _safe_telegram_send_result(notification: dict[str, Any]) -> str:
+    if notification.get("sent"):
+        return "sent"
+    if not notification.get("enabled"):
+        return "skipped"
+    return "failed_sanitized"
 
 
 def _send_telegram_notification(message: str) -> dict[str, Any]:

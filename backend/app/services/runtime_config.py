@@ -15,6 +15,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "default_model_tier": "cheap",
     "premium_model_requires_manual_approval": True,
     "telegram_notifications_enabled": True,
+    "telegram_status_send_enabled": False,
     "safe_mode": True,
     "scheduler_poll_seconds": 30,
     "backend_base_url": "http://127.0.0.1:8000",
@@ -32,6 +33,10 @@ def _parse_scalar(value: str) -> Any:
         return int(cleaned)
     except ValueError:
         return cleaned
+
+
+def _parse_bool_env(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def load_runtime_config(path: Path | None = None) -> dict[str, Any]:
@@ -53,11 +58,12 @@ def load_runtime_config(path: Path | None = None) -> dict[str, Any]:
         "AGENT_RUNTIME_ALLOW_AUTO_ENABLE_SPAWNED_JOBS": "allow_auto_enable_spawned_jobs",
         "AGENT_RUNTIME_PREMIUM_REQUIRES_APPROVAL": "premium_model_requires_manual_approval",
         "AGENT_RUNTIME_TELEGRAM_NOTIFICATIONS_ENABLED": "telegram_notifications_enabled",
+        "AGENT_RUNTIME_TELEGRAM_STATUS_SEND_ENABLED": "telegram_status_send_enabled",
         "AGENT_RUNTIME_SAFE_MODE": "safe_mode",
     }
     for env_name, key in bool_envs.items():
         if env_name in os.environ:
-            config[key] = os.environ[env_name].strip().lower() == "true"
+            config[key] = _parse_bool_env(os.environ[env_name])
 
     int_envs = {
         "AGENT_RUNTIME_MAX_JOB_RUNS_PER_HOUR": "max_job_runs_per_hour",

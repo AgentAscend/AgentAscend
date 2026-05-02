@@ -703,6 +703,147 @@ def test_access_grant_integrity_metadata_is_aggregate_only(tmp_path):
         session.DB_PATH = original_db_path
 
 
+def test_telegram_status_summary_is_report_only_by_default(tmp_path, monkeypatch):
+    db_path = tmp_path / "agentascend-telegram-report-only.db"
+    original_db_path = session.DB_PATH
+    session.DB_PATH = db_path
+    try:
+        session.init_db()
+        from backend.app.services import job_runner
+
+        sent_messages = []
+        monkeypatch.setenv("AGENT_RUNTIME_TELEGRAM_NOTIFICATIONS_ENABLED", "true")
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token-should-not-be-used")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "123456")
+        monkeypatch.delenv("AGENT_RUNTIME_TELEGRAM_STATUS_SEND_ENABLED", raising=False)
+        monkeypatch.setattr(
+            job_runner,
+            "_send_telegram_notification",
+            lambda message: sent_messages.append(message) or {"enabled": True, "sent": True},
+        )
+
+        with session.get_connection() as conn:
+            job = conn.execute("SELECT * FROM scheduled_jobs WHERE job_type = ?", ("telegram_status_summary",)).fetchone()
+            assert job is not None
+            before_counts = {
+                table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                for table in ["payments", "payment_intents", "access_grants", "marketplace_entitlements", "agent_findings"]
+            }
+            enabled_before = job["enabled"]
+
+        result = job_runner.run_job_once(job["id"])
+        assert result["status"] == "success"
+        assert sent_messages == []
+
+        with session.get_connection() as conn:
+            run = conn.execute("SELECT metadata_json, output_summary FROM job_runs WHERE id = ?", (result["run_id"],)).fetchone()
+            after_counts = {
+                table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                for table in ["payments", "payment_intents", "access_grants", "marketplace_entitlements", "agent_findings"]
+            }
+            enabled_after = conn.execute("SELECT enabled FROM scheduled_jobs WHERE id = ?", (job["id"],)).fetchone()[0]
+
+        assert after_counts == before_counts
+        assert enabled_after == enabled_before
+        assert "AgentAscend scheduler daily summary" in run["output_summary"]
+        metadata = json.loads(run["metadata_json"])
+        assert set(metadata) == {"mode", "recent_runs_24h", "external_message_sent", "send_enabled"}
+        assert metadata["mode"] == "report_only"
+        assert isinstance(metadata["recent_runs_24h"], int)
+        assert metadata["external_message_sent"] is False
+        assert metadata["send_enabled"] is False
+        metadata_text = json.dumps(metadata).lower()
+        for private_value in ["token", "chat", "telegram_bot", "raw db", "metadata_json", "payload_json", "secret"]:
+            assert private_value not in metadata_text
+    finally:
+        session.DB_PATH = original_db_path
+
+
+def test_telegram_status_summary_requires_explicit_send_flag(tmp_path, monkeypatch):
+    db_path = tmp_path / "agentascend-telegram-send-flag.db"
+    original_db_path = session.DB_PATH
+    session.DB_PATH = db_path
+    try:
+        session.init_db()
+        from backend.app.services import job_runner
+
+        sent_messages = []
+        monkeypatch.setenv("AGENT_RUNTIME_TELEGRAM_NOTIFICATIONS_ENABLED", "true")
+        monkeypatch.setenv("AGENT_RUNTIME_TELEGRAM_STATUS_SEND_ENABLED", "false")
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token-should-not-be-used")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "123456")
+        monkeypatch.setattr(
+            job_runner,
+            "_send_telegram_notification",
+            lambda message: sent_messages.append(message) or {"enabled": True, "sent": True},
+        )
+
+        with session.get_connection() as conn:
+            job = conn.execute("SELECT * FROM scheduled_jobs WHERE job_type = ?", ("telegram_status_summary",)).fetchone()
+            assert job is not None
+
+        result = job_runner.run_job_once(job["id"])
+        assert result["status"] == "success"
+        assert sent_messages == []
+
+        with session.get_connection() as conn:
+            run = conn.execute("SELECT metadata_json FROM job_runs WHERE id = ?", (result["run_id"],)).fetchone()
+        metadata = json.loads(run["metadata_json"])
+        assert metadata["mode"] == "report_only"
+        assert metadata["external_message_sent"] is False
+        assert metadata["send_enabled"] is False
+    finally:
+        session.DB_PATH = original_db_path
+
+
+def test_telegram_status_summary_send_mode_metadata_is_sanitized(monkeypatch):
+    from backend.app.services import job_runner
+
+    sent_messages = []
+    monkeypatch.setenv("AGENT_RUNTIME_TELEGRAM_STATUS_SEND_ENABLED", "1")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token-should-not-appear")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "987654")
+    monkeypatch.setattr(job_runner, "_count_rows", lambda table, where="1=1", params=(): 3)
+    monkeypatch.setattr(
+        job_runner,
+        "_send_telegram_notification",
+        lambda message: sent_messages.append(message)
+        or {
+            "enabled": True,
+            "sent": False,
+            "status_code": 500,
+            "error": "raw external failure mentioning test-token-should-not-appear and chat 987654",
+            "response_body": "raw response body must not appear",
+        },
+    )
+
+    result = job_runner._telegram_status_summary({"id": "default-telegram-status-summary"})
+
+    assert result["status"] == "success"
+    assert sent_messages == ["AgentAscend scheduler daily summary: 3 job runs recorded in the last 24h."]
+    metadata = result["metadata"]
+    assert metadata == {
+        "mode": "send_enabled",
+        "recent_runs_24h": 3,
+        "external_message_sent": False,
+        "send_enabled": True,
+        "send_result": "failed_sanitized",
+    }
+    result_text = json.dumps(result).lower()
+    for private_value in [
+        "test-token-should-not-appear",
+        "987654",
+        "response_body",
+        "raw response body",
+        "raw external failure",
+        "telegram_bot_token",
+        "telegram_chat_id",
+        "metadata_json",
+        "payload_json",
+    ]:
+        assert private_value not in result_text
+
+
 class _ScalarResult:
     def __init__(self, value):
         self.value = value

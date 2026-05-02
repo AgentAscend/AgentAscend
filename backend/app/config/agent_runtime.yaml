@@ -18,6 +18,7 @@ max_spawned_jobs_per_day: 5
 default_model_tier: cheap
 premium_model_requires_manual_approval: true
 telegram_notifications_enabled: true
+telegram_status_send_enabled: false
 safe_mode: true
 scheduler_poll_seconds: 30
 backend_base_url: http://127.0.0.1:8000
