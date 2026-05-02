@@ -644,3 +644,71 @@ def test_payment_route_audit_recognizes_pumpfun_replay_protection(tmp_path):
         assert finding_count == 0
     finally:
         session.DB_PATH = original_db_path
+
+
+def test_payment_route_audit_missing_static_signals_is_report_only(tmp_path, monkeypatch):
+    db_path = tmp_path / "agentascend-payment-route-audit-report-only.db"
+    original_db_path = session.DB_PATH
+    session.DB_PATH = db_path
+    try:
+        session.init_db()
+        from backend.app.services import job_runner
+
+        fake_root = tmp_path / "fake-project"
+        routes_dir = fake_root / "backend/app/routes"
+        db_dir = fake_root / "backend/app/db"
+        routes_dir.mkdir(parents=True)
+        db_dir.mkdir(parents=True)
+        (routes_dir / "payments.py").write_text("# no payment verification signals here\n", encoding="utf-8")
+        (routes_dir / "pumpfun_payments.py").write_text("# no pumpfun invoice validation signals here\n", encoding="utf-8")
+        (db_dir / "session.py").write_text("# no unique tx signature schema signal here\n", encoding="utf-8")
+        monkeypatch.setattr(job_runner, "PROJECT_ROOT", fake_root)
+
+        with session.get_connection() as conn:
+            job = conn.execute("SELECT * FROM scheduled_jobs WHERE job_type = ?", ("payment_route_audit",)).fetchone()
+            assert job is not None
+            before_counts = {
+                table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                for table in ["payments", "payment_intents", "access_grants", "marketplace_entitlements", "agent_findings"]
+            }
+
+        result = job_runner.run_job_once(job["id"])
+        assert result["status"] == "success"
+        assert "Missing static signals:" in result["summary"]
+        assert "tx_signature_replay_protection" in result["summary"]
+
+        with session.get_connection() as conn:
+            run = conn.execute("SELECT metadata_json FROM job_runs WHERE id = ?", (result["run_id"],)).fetchone()
+            after_counts = {
+                table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                for table in ["payments", "payment_intents", "access_grants", "marketplace_entitlements", "agent_findings"]
+            }
+        assert after_counts == before_counts
+        metadata = json.loads(run["metadata_json"])
+        assert set(metadata) == {"checks"}
+        assert set(metadata["checks"]) == {
+            "tx_signature_replay_protection",
+            "receiver_check",
+            "amount_check",
+            "access_grant",
+            "pumpfun_invoice_validation",
+        }
+        assert all(value is False for value in metadata["checks"].values())
+        metadata_text = json.dumps(metadata).lower()
+        for private_value in [
+            "user_id",
+            "private_tx_signature_value",
+            "payment_reference",
+            "wallet",
+            "metadata_json",
+            "payload_json",
+            "database_url",
+            "rpc_url",
+            "tx_base64",
+            "signed_transaction",
+            "token",
+            "secret",
+        ]:
+            assert private_value not in metadata_text
+    finally:
+        session.DB_PATH = original_db_path

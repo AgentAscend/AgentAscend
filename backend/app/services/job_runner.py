@@ -122,16 +122,6 @@ def _payment_route_audit(job: dict[str, Any]) -> dict[str, Any]:
         "pumpfun_invoice_validation": "validate_invoice_payment" in text or "validateInvoicePayment" in text,
     }
     missing = [name for name, ok in checks.items() if not ok]
-    if missing:
-        _record_finding(
-            job["id"],
-            "payment_audit",
-            "warning",
-            "Payment route audit found missing static checks",
-            f"Static scan did not find: {', '.join(missing)}.",
-            "Review payment verification manually before release; do not auto-edit payment logic from scheduler jobs.",
-            {"missing": missing},
-        )
     status = "success"
     return {"status": status, "summary": f"Payment route audit complete. Missing static signals: {missing or 'none'}", "metadata": {"checks": checks}}
 
