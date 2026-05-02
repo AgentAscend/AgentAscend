@@ -150,10 +150,38 @@ def _access_grant_integrity_check(_job: dict[str, Any]) -> dict[str, Any]:
             ) AS duplicate_groups
             """
         ).fetchone()[0]
+        duplicate_payment_group_count = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT 1
+                FROM access_grants
+                WHERE status = 'active' AND payment_id IS NOT NULL
+                GROUP BY user_id, feature_name, payment_id
+                HAVING COUNT(*) > 1
+            ) AS duplicate_groups
+            """
+        ).fetchone()[0]
+        duplicate_intent_group_count = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT 1
+                FROM access_grants
+                WHERE status = 'active' AND intent_reference IS NOT NULL
+                GROUP BY user_id, feature_name, intent_reference
+                HAVING COUNT(*) > 1
+            ) AS duplicate_groups
+            """
+        ).fetchone()[0]
     return {
         "status": "success",
         "summary": f"Access grant integrity check complete. Duplicate active grant groups: {duplicate_group_count}",
-        "metadata": {"duplicate_active_grant_group_count": int(duplicate_group_count)},
+        "metadata": {
+            "duplicate_active_grant_group_count": int(duplicate_group_count),
+            "duplicate_active_grant_payment_group_count": int(duplicate_payment_group_count),
+            "duplicate_active_grant_intent_group_count": int(duplicate_intent_group_count),
+        },
     }
 
 

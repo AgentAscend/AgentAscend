@@ -511,10 +511,10 @@ def test_access_grant_integrity_metadata_is_aggregate_only(tmp_path):
         with session.get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO access_grants(user_id, feature_name, status)
+                INSERT INTO access_grants(user_id, feature_name, status, payment_id, intent_reference)
                 VALUES
-                    ('private_user_a', 'private_feature', 'active'),
-                    ('private_user_a', 'private_feature', 'active')
+                    ('private_user_a', 'private_feature', 'active', 101, 'intent_a'),
+                    ('private_user_a', 'private_feature', 'active', 102, 'intent_b')
                 """
             )
             conn.commit()
@@ -523,11 +523,14 @@ def test_access_grant_integrity_metadata_is_aggregate_only(tmp_path):
 
         result = job_runner.run_job_once(job["id"])
         assert result["status"] == "success"
+        assert "Duplicate active grant groups: 1" in result["summary"]
 
         with session.get_connection() as conn:
             run = conn.execute("SELECT metadata_json FROM job_runs WHERE id = ?", (result["run_id"],)).fetchone()
         metadata = json.loads(run["metadata_json"])
         assert metadata["duplicate_active_grant_group_count"] == 1
+        assert metadata["duplicate_active_grant_payment_group_count"] == 0
+        assert metadata["duplicate_active_grant_intent_group_count"] == 0
         metadata_text = json.dumps(metadata).lower()
         assert "private_user" not in metadata_text
         assert "private_feature" not in metadata_text
