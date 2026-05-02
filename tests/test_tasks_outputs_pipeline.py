@@ -52,6 +52,95 @@ def _auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _selected_scheduler_states() -> dict[str, bool]:
+    import backend.app.db.session as session
+
+    job_ids = [
+        "default-task-queue-worker",
+        "default-roadmap-review",
+        "default-telegram-status-summary",
+        "default-git-status-summary",
+    ]
+    with session.get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT id, enabled FROM scheduled_jobs WHERE id IN ({','.join(['?'] * len(job_ids))})",
+            job_ids,
+        ).fetchall()
+    return {row["id"]: bool(row["enabled"]) for row in rows}
+
+
+def test_create_task_background_worker_trigger_runs_when_flag_true(client: TestClient, monkeypatch):
+    monkeypatch.setenv("AGENT_RUNTIME_TASK_WORKER_BACKGROUND_ENABLED", "true")
+    import backend.app.routes.platform as platform
+
+    calls = []
+    monkeypatch.setattr(platform, "_trigger_task_queue_worker", lambda: calls.append("triggered"))
+    _user_id, token = _signup(client, "tasks-worker-background-true@example.com")
+    before_states = _selected_scheduler_states()
+    before_counts = _safety_table_counts()
+
+    response = client.post(
+        "/tasks",
+        json={"title": "Background true task", "type": "analysis", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+
+    assert response.status_code == 200, response.text
+    assert calls == ["triggered"]
+    task_id = response.json()["task_id"]
+    detail = client.get(f"/tasks/{task_id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["task"]["status"] == "queued"
+    assert _selected_scheduler_states() == before_states
+    assert _safety_table_counts() == before_counts
+
+
+def test_create_task_background_worker_trigger_is_skipped_when_flag_false(client: TestClient, monkeypatch):
+    monkeypatch.setenv("AGENT_RUNTIME_TASK_WORKER_BACKGROUND_ENABLED", "false")
+    import backend.app.routes.platform as platform
+
+    calls = []
+    monkeypatch.setattr(platform, "_trigger_task_queue_worker", lambda: calls.append("triggered"))
+    _user_id, token = _signup(client, "tasks-worker-background-false@example.com")
+    before_states = _selected_scheduler_states()
+    before_counts = _safety_table_counts()
+
+    response = client.post(
+        "/tasks",
+        json={"title": "Background false task", "type": "analysis", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+
+    assert response.status_code == 200, response.text
+    assert calls == []
+    task_id = response.json()["task_id"]
+    detail = client.get(f"/tasks/{task_id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["task"]["status"] == "queued"
+    assert _selected_scheduler_states() == before_states
+    assert _safety_table_counts() == before_counts
+
+
+def test_create_task_background_worker_trigger_defaults_to_enabled(client: TestClient, monkeypatch):
+    monkeypatch.delenv("AGENT_RUNTIME_TASK_WORKER_BACKGROUND_ENABLED", raising=False)
+    import backend.app.routes.platform as platform
+
+    calls = []
+    monkeypatch.setattr(platform, "_trigger_task_queue_worker", lambda: calls.append("triggered"))
+    _user_id, token = _signup(client, "tasks-worker-background-default@example.com")
+    before_states = _selected_scheduler_states()
+
+    response = client.post(
+        "/tasks",
+        json={"title": "Background default task", "type": "analysis", "agent_id": "agt_worker"},
+        headers=_auth_header(token),
+    )
+
+    assert response.status_code == 200, response.text
+    assert calls == ["triggered"]
+    assert _selected_scheduler_states() == before_states
+
+
 def test_create_task_requires_auth(client: TestClient):
     response = client.post(
         "/tasks",

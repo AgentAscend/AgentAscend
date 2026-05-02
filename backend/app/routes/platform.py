@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import secrets
 from datetime import datetime, timezone
 
@@ -91,6 +92,18 @@ def _authorized_scope_user_id(user_id: str | None, authorization: str | None) ->
             fail(403, "forbidden", "Authenticated user cannot access another user's data")
         return user_id
     return actor["user_id"]
+
+
+def _task_worker_background_enabled() -> bool:
+    raw = os.getenv("AGENT_RUNTIME_TASK_WORKER_BACKGROUND_ENABLED")
+    if raw is None or raw.strip() == "":
+        return True
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return True
 
 
 def _trigger_task_queue_worker():
@@ -1219,7 +1232,8 @@ def create_task(payload: TaskCreateInput, background_tasks: BackgroundTasks, aut
         _write_task_creation_ledger(conn, task_id, actor, payload, task_row["created_at"] if task_row else None)
         conn.commit()
     _audit(actor, "task.create", "task", task_id, {"priority": payload.priority})
-    background_tasks.add_task(_trigger_task_queue_worker)
+    if _task_worker_background_enabled():
+        background_tasks.add_task(_trigger_task_queue_worker)
     return {"status": "ok", "task_id": task_id}
 
 
