@@ -58,22 +58,30 @@ AgentAscend is currently in a production-verification and consolidation phase. E
 - Owner-reported live canary evidence: marketplace purchase completed, buyer owned/unlocked the bought agent, creator dashboard showed claimable funds and buyback accounting, and the creator claim payout was received.
 
 ## Scheduler/ledger state
-Accurate release wording: Execution Ledger/Scheduler Ledger is production-enabled and audited for the approved safe scheduler workload. Held scheduler jobs remain intentionally disabled and require separate scoped audits before enablement.
+Accurate release wording: Execution Ledger/Scheduler Ledger is production-enabled and audited for the approved scheduler workload. Held scheduler jobs remain intentionally disabled and require separate scoped audits before enablement.
 
-Approved safe scheduler jobs enabled in production:
-- Backend health check
-- Frontend/backend integration drift check
-- Wiki/Obsidian consistency check
-- TODO/FIXME scan
+Enabled and audited scheduler jobs in production:
+- `default-backend-health-check`
+- `default-integration-drift-check`
+- `default-wiki-consistency-check`
+- `default-todo-fixme-scan`
+- `default-payment-route-audit`
+- `default-failed-payment-replay-review`
+- `default-access-grant-integrity-check`
+- `default-task-queue-worker`
 
-Held jobs disabled in production:
-- Payment route audit
-- Failed payment/replay protection review
-- Access grant integrity check
-- Telegram status summary
-- Task queue worker
-- Git status/change summary
-- AgentAscend roadmap review
+Still disabled / held jobs in production:
+- `default-telegram-status-summary`
+- `default-git-status-summary`
+- `default-roadmap-review`
+
+Task worker enablement note, 2026-05-02:
+- Owner-approved canary for `default-task-queue-worker` processed 0 tasks.
+- Task worker scheduler metadata is aggregate-only: `processed`, `completed`, `failed`, and `output_count`.
+- `output_ids` is removed from job metadata.
+- No payment/access/marketplace mutation occurred during enablement; protected aggregates stayed unchanged.
+- `AGENT_RUNTIME_TASK_WORKER_BACKGROUND_ENABLED` controls `create_task` background triggering separately from scheduled job enabled state.
+- Scheduled enablement of `default-task-queue-worker` can process real queued production tasks in future natural scheduler runs.
 
 Read-only DB audit on 2026-04-29 found:
 - 11 scheduler jobs total, 4 enabled.
@@ -97,4 +105,4 @@ Read-only DB audit on 2026-04-29 found:
 - Do not implement AgentAscend buyback/burn bots; Pump.fun handles tokenized-agent buyback/burn mechanics.
 
 ## Notes
-This page was updated during the 2026-04-29 overnight audit/consolidation pass. Production claims here are based on read-only live checks plus owner-reported successful purchase/claim evidence from the same session.
+This page was updated after the 2026-05-02 task worker scheduler enablement canary. Production claims here are based on read-only live checks, scoped canaries, and owner-reported successful purchase/claim evidence where noted.

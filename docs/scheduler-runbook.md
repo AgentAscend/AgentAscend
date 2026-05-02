@@ -4,27 +4,27 @@
 Operate and audit the AgentAscend DB-backed scheduler safely without accidentally enabling held jobs or mutating production state.
 
 ## Current production wording
-Execution Ledger/Scheduler Ledger is production-enabled and audited for the approved safe scheduler workload. Held scheduler jobs remain intentionally disabled and require separate scoped audits before enablement.
+Execution Ledger/Scheduler Ledger is production-enabled and audited for the approved scheduler workload. Three held scheduler jobs remain intentionally disabled and require separate scoped audits before enablement.
 
 ## Production services
 - `AgentAscend`: Railway FastAPI web service.
 - `AgentAscend-Scheduler`: Railway worker service running scheduler loop.
 - `Postgres`: Railway production database.
 
-## Approved safe enabled jobs
-- Backend health check
-- Frontend/backend integration drift check
-- Wiki/Obsidian consistency check
-- TODO/FIXME scan
+## Enabled and audited jobs
+- `default-backend-health-check`
+- `default-integration-drift-check`
+- `default-wiki-consistency-check`
+- `default-todo-fixme-scan`
+- `default-payment-route-audit`
+- `default-failed-payment-replay-review`
+- `default-access-grant-integrity-check`
+- `default-task-queue-worker`
 
 ## Held disabled jobs
-- Payment route audit
-- Failed payment/replay protection review
-- Access grant integrity check
-- Telegram status summary
-- Task queue worker
-- Git status/change summary
-- AgentAscend roadmap review
+- `default-telegram-status-summary`
+- `default-git-status-summary`
+- `default-roadmap-review`
 
 ## Read-only audit commands
 Do not run jobs manually.
@@ -58,7 +58,7 @@ Useful aggregate checks:
 ## Safety rules
 - Do not call `/jobs/run-due` during audits.
 - Do not modify scheduler flags.
-- Do not enable held jobs.
+- Do not enable held jobs without explicit owner approval and scoped canary.
 - Do not disable approved jobs unless explicitly instructed.
 - Do not deploy or redeploy scheduler from an audit pass.
 - Do not run `scripts/run_scheduler.py` manually against production.
@@ -72,6 +72,16 @@ Useful aggregate checks:
 - Recent job runs were successful backend health checks.
 - Scheduler artifacts count was 0 and content_text count was 0.
 - Orphan execution events/artifacts count was 0.
+
+## Current 2026-05-02 task worker enablement findings
+- `default-task-queue-worker` is enabled after an owner-approved scoped canary.
+- Canary processed 0 tasks.
+- Task worker scheduler metadata is aggregate-only: `processed`, `completed`, `failed`, and `output_count`.
+- `output_ids` is removed from job metadata.
+- `AGENT_RUNTIME_TASK_WORKER_BACKGROUND_ENABLED` controls `create_task` background triggering separately from scheduled job enabled state.
+- Scheduled enablement can process real queued production tasks in future natural scheduler runs.
+- No payment/access/marketplace mutation occurred during enablement.
+- Remaining held jobs stayed disabled: `default-telegram-status-summary`, `default-git-status-summary`, and `default-roadmap-review`.
 
 ## Held-job enablement process
 Each held job requires a separate scoped audit before enablement:
