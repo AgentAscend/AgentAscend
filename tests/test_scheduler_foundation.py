@@ -523,20 +523,104 @@ def test_access_grant_integrity_metadata_is_aggregate_only(tmp_path):
 
         result = job_runner.run_job_once(job["id"])
         assert result["status"] == "success"
-        assert "Duplicate active grant groups: 1" in result["summary"]
+        assert "Broad multi-grant groups: 1" in result["summary"]
+        assert "replay-relevant duplicate payment groups: 0" in result["summary"]
+        assert "replay-relevant duplicate intent groups: 0" in result["summary"]
+        assert "enablement-blocking replay duplicates: 0" in result["summary"]
+        assert "Duplicate active grant groups" not in result["summary"]
 
         with session.get_connection() as conn:
             run = conn.execute("SELECT metadata_json FROM job_runs WHERE id = ?", (result["run_id"],)).fetchone()
         metadata = json.loads(run["metadata_json"])
+        assert metadata["broad_active_grant_group_count"] == 1
+        assert metadata["replay_duplicate_payment_group_count"] == 0
+        assert metadata["replay_duplicate_intent_group_count"] == 0
+        assert metadata["replay_relevant_duplicate_group_count"] == 0
+        assert metadata["enablement_blocking_duplicate_count"] == 0
         assert metadata["duplicate_active_grant_group_count"] == 1
         assert metadata["duplicate_active_grant_payment_group_count"] == 0
         assert metadata["duplicate_active_grant_intent_group_count"] == 0
         metadata_text = json.dumps(metadata).lower()
-        assert "private_user" not in metadata_text
-        assert "private_feature" not in metadata_text
-        assert "user_id" not in metadata_text
+        for private_value in [
+            "private_user",
+            "private_feature",
+            "user_id",
+            "feature_name",
+            "payment_id",
+            "intent_reference",
+            "raw db",
+            "metadata_json",
+            "payload_json",
+        ]:
+            assert private_value not in metadata_text
     finally:
         session.DB_PATH = original_db_path
+
+
+class _ScalarResult:
+    def __init__(self, value):
+        self.value = value
+
+    def fetchone(self):
+        return [self.value]
+
+
+class _AccessGrantIntegrityAuditConnection:
+    def __init__(self, broad_count, payment_count, intent_count):
+        self.counts = [broad_count, payment_count, intent_count]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, _query):
+        return _ScalarResult(self.counts.pop(0))
+
+
+def test_access_grant_integrity_summary_flags_replay_payment_duplicates(monkeypatch):
+    from backend.app.services import job_runner
+
+    monkeypatch.setattr(job_runner, "get_connection", lambda: _AccessGrantIntegrityAuditConnection(1, 2, 0))
+
+    result = job_runner._access_grant_integrity_check({})
+
+    assert result["status"] == "success"
+    assert "Broad multi-grant groups: 1" in result["summary"]
+    assert "replay-relevant duplicate payment groups: 2" in result["summary"]
+    assert "replay-relevant duplicate intent groups: 0" in result["summary"]
+    assert "enablement-blocking replay duplicates: 2" in result["summary"]
+    metadata = result["metadata"]
+    assert metadata["replay_duplicate_payment_group_count"] == 2
+    assert metadata["replay_duplicate_intent_group_count"] == 0
+    assert metadata["replay_relevant_duplicate_group_count"] == 2
+    assert metadata["enablement_blocking_duplicate_count"] == 2
+    metadata_text = json.dumps(metadata).lower()
+    for private_value in ["user_id", "feature_name", "payment_id", "intent_reference", "raw db", "metadata_json", "payload_json"]:
+        assert private_value not in metadata_text
+
+
+def test_access_grant_integrity_summary_flags_replay_intent_duplicates(monkeypatch):
+    from backend.app.services import job_runner
+
+    monkeypatch.setattr(job_runner, "get_connection", lambda: _AccessGrantIntegrityAuditConnection(0, 0, 3))
+
+    result = job_runner._access_grant_integrity_check({})
+
+    assert result["status"] == "success"
+    assert "Broad multi-grant groups: 0" in result["summary"]
+    assert "replay-relevant duplicate payment groups: 0" in result["summary"]
+    assert "replay-relevant duplicate intent groups: 3" in result["summary"]
+    assert "enablement-blocking replay duplicates: 3" in result["summary"]
+    metadata = result["metadata"]
+    assert metadata["replay_duplicate_payment_group_count"] == 0
+    assert metadata["replay_duplicate_intent_group_count"] == 3
+    assert metadata["replay_relevant_duplicate_group_count"] == 3
+    assert metadata["enablement_blocking_duplicate_count"] == 3
+    metadata_text = json.dumps(metadata).lower()
+    for private_value in ["user_id", "feature_name", "payment_id", "intent_reference", "raw db", "metadata_json", "payload_json"]:
+        assert private_value not in metadata_text
 
 
 def test_payment_route_audit_recognizes_pumpfun_replay_protection(tmp_path):

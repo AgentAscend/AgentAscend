@@ -174,13 +174,34 @@ def _access_grant_integrity_check(_job: dict[str, Any]) -> dict[str, Any]:
             ) AS duplicate_groups
             """
         ).fetchone()[0]
+    broad_active_grant_group_count = int(duplicate_group_count)
+    replay_duplicate_payment_group_count = int(duplicate_payment_group_count)
+    replay_duplicate_intent_group_count = int(duplicate_intent_group_count)
+    replay_relevant_duplicate_group_count = replay_duplicate_payment_group_count + replay_duplicate_intent_group_count
     return {
         "status": "success",
-        "summary": f"Access grant integrity check complete. Duplicate active grant groups: {duplicate_group_count}",
+        "summary": (
+            "Access grant integrity check complete. "
+            f"Broad multi-grant groups: {broad_active_grant_group_count}; "
+            f"replay-relevant duplicate payment groups: {replay_duplicate_payment_group_count}; "
+            f"replay-relevant duplicate intent groups: {replay_duplicate_intent_group_count}; "
+            f"enablement-blocking replay duplicates: {replay_relevant_duplicate_group_count}"
+        ),
         "metadata": {
-            "duplicate_active_grant_group_count": int(duplicate_group_count),
-            "duplicate_active_grant_payment_group_count": int(duplicate_payment_group_count),
-            "duplicate_active_grant_intent_group_count": int(duplicate_intent_group_count),
+            # Broad active-grant groups are informational: one user/feature can
+            # legitimately have multiple active grants from separate payments.
+            "broad_active_grant_group_count": broad_active_grant_group_count,
+            # Replay-relevant groups mirror the unique replay-protection keys and
+            # should block enablement if either count is nonzero.
+            "replay_duplicate_payment_group_count": replay_duplicate_payment_group_count,
+            "replay_duplicate_intent_group_count": replay_duplicate_intent_group_count,
+            "replay_relevant_duplicate_group_count": replay_relevant_duplicate_group_count,
+            "enablement_blocking_duplicate_count": replay_relevant_duplicate_group_count,
+            # Legacy aggregate field names retained for compatibility with older
+            # scheduler dashboards; broad count is not an enablement blocker.
+            "duplicate_active_grant_group_count": broad_active_grant_group_count,
+            "duplicate_active_grant_payment_group_count": replay_duplicate_payment_group_count,
+            "duplicate_active_grant_intent_group_count": replay_duplicate_intent_group_count,
         },
     }
 
