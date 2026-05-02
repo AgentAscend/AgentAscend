@@ -90,3 +90,22 @@ Remaining risks:
 - `getTransaction` currently uses `maxSupportedTransactionVersion: 0`.
 - A future owner-approved controlled payment regression should verify deployed acceptance of a real valid Pump.fun payment and rejection of replay/wrong-signature cases.
 - Node dependency vulnerabilities remain for a separate dependency-audit phase.
+
+## Replay-index hardening status — 2026-05-02
+Status: PASS preflight / DDL not needed now.
+
+Production replay-index preflight confirmed:
+- No DDL was run.
+- No production DB mutation occurred.
+- Duplicate payment `tx_signature` groups: 0.
+- Duplicate payment_intent `tx_signature` groups: 0.
+- Duplicate active grant groups: 0.
+- Duplicate listing/user entitlement groups: 0.
+- Existing valid indexes/constraints already protect replay-sensitive payment/access/marketplace records.
+
+Operational rules:
+- Do not run replay-index DDL now.
+- Run future DDL only if schema drift or duplicate-risk evidence appears and the owner explicitly approves.
+- Inspect semantic equivalence before using `IF NOT EXISTS` by name.
+- Do not drop existing production constraints/indexes unless separately inspected and approved.
+- `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY` cannot run inside normal transactions.

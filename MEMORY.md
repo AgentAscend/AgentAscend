@@ -34,6 +34,7 @@ AgentAscend is not just a chatbot website. It is intended to become an infrastru
 - Owner-reported canary: marketplace purchase completed, buyer ownership/unlock worked, creator dashboard accounting updated, and creator claim payout was received. Archive public transaction/sanitized evidence before using this as final launch proof.
 - Pump.fun roles: Agent Deposit/payment address is `G3yF27myX5WdtAihoKEWtuSPxMBQYqxCMSsJaSEcBx2S`; creator/payment authority wallet is `DTC729KJNSuCqGgFUYyYEPQAaiajFMvSerrAmyn84K6D`; buyback/burn is handled by Pump.fun, not AgentAscend code.
 - Critical rule: the Pump.fun payment address alone is not invoice proof; AgentAscend access must require backend-owned invoice/payment-intent verification with exact SDK params and `validateInvoicePayment`.
+- Replay-index migration preflight passed on 2026-05-02 with no production DB mutation and no DDL run. Admin aggregate duplicate counts were all zero, and existing valid unique indexes/constraints already satisfy replay protection for payments, payment_intents, active access_grants, and marketplace_entitlements; do not run replay-index DDL unless future schema drift or duplicate risk appears.
 
 The current priority is to build a working MVP that proves the core access/payment loop.
 

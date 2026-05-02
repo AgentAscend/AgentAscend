@@ -96,9 +96,25 @@ Read-only DB audit on 2026-04-29 found:
 - Scheduler artifacts with `content_text` count is 0.
 - No orphan execution events/artifacts found.
 
+## Replay-index hardening state — 2026-05-02
+- Replay-index migration preflight result: PASS.
+- DDL execution: not recommended and not needed now.
+- No DDL was run and no production DB mutation occurred.
+- Admin aggregate duplicate counts were all zero: payment `tx_signature`, payment_intent `tx_signature`, active grant, and listing/user entitlement duplicate groups all reported 0.
+- Existing index inspection completed safely and found valid replay protection already in place:
+  - `payments(tx_signature)` has valid unique protection.
+  - `payment_intents(tx_signature)` for nonempty signatures has a valid unique partial index.
+  - active `access_grants(user_id, feature_name, intent_reference)` has a valid unique partial index.
+  - active `access_grants(user_id, feature_name, payment_id)` has a valid unique partial index.
+  - `marketplace_entitlements(listing_id, user_id)` has a valid unique constraint/index.
+- Candidate replay-index DDL would likely be redundant, especially for `payments(tx_signature)`.
+- Future DDL should inspect semantic equivalence first, not rely only on `IF NOT EXISTS` by index name.
+- Do not drop existing production constraints/indexes unless separately inspected and approved.
+- If future DDL is ever needed, `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY` cannot run inside normal transactions.
+
 ## Started but not fully finished
 - Archive owner-side payment canary evidence into a durable report with public tx signatures and screenshots or sanitized network evidence if desired.
-- Continue payment/access atomicity and durable entitlement persistence review.
+- Run Node dependency audit/cleanup as the next hardening phase.
 - Confirm or clean any remaining legacy payment modal code that is now inactive.
 - Audit held scheduler jobs one-by-one before enabling any of them.
 - Classify and isolate the dirty working tree before commit.

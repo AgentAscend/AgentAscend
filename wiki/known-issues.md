@@ -56,8 +56,8 @@ This page was created/updated during the 2026-04-25 overnight knowledge/runtime 
 ## 2026-04-30 Knowledge Graph Status Update
 - Raw launch evidence, tokenized-agent, scheduler/cronjob, deploy-readiness, security, and Hermes runtime notes now link back to this hub graph.
 - Exact Pump.fun `tx_signature` binding hardening is implemented and deployed at commit `453df65aec69f7aa95b20bb1752f7d3af97ad488`.
-- Replay-index migration remains pending and must not be run without owner approval.
-- Node dependency audit remains pending as a separate hardening phase.
+- Replay-index preflight passed on 2026-05-02; DDL is not needed now because existing valid indexes/constraints already satisfy the hardening target.
+- Node dependency audit remains pending as the next separate hardening phase.
 
 ## Exact tx_signature Binding Hardening — Completed 2026-04-30
 Status: implemented and deployed.
@@ -88,3 +88,11 @@ Remaining risks:
 - 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-28]]
 - 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-29]]
 - 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-30]]
+
+## 2026-05-02 Replay-index Preflight Update
+- Replay-index hardening target is satisfied by existing valid production indexes/constraints.
+- Migration DDL should not be run unless future schema drift or duplicate risk appears.
+- Future DDL should inspect semantic equivalence first, not just `IF NOT EXISTS` by name.
+- Existing production constraints/indexes must not be dropped unless separately inspected and approved.
+- If future replay-index DDL is ever needed, concurrent index create/drop statements cannot run inside normal transactions.
+- Remaining hardening focus moves to Node dependency audit/cleanup, controlled payment regression, optional held scheduler enablement decisions, multi-agent architecture setup, and frontend/product polish.

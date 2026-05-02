@@ -12,7 +12,7 @@ aliases:
 Launch readiness tracks whether AgentAscend is safe to present publicly: live API health, frontend/backend contract, payment/access proof, scheduler posture, and remaining hardening.
 
 ## Key Current Status
-Current soft-launch verdict: READY FOR SOFT LAUNCH / HARDENING ITEMS REMAIN. Live API health/OpenAPI/security gates are passing. Pump.fun exact tx_signature binding is implemented and deployed. Replay-index migration and Node dependency audit remain pending.
+Current soft-launch verdict: READY FOR SOFT LAUNCH / HARDENING ITEMS REMAIN. Live API health/OpenAPI/security gates are passing. Pump.fun exact tx_signature binding is implemented and deployed. Replay-index preflight passed and DDL is not needed now because existing valid indexes/constraints satisfy the target. Node dependency audit remains pending.
 
 ## Important Links
 - [[AgentAscend]]
@@ -36,7 +36,6 @@ Current soft-launch verdict: READY FOR SOFT LAUNCH / HARDENING ITEMS REMAIN. Liv
 - [[raw/post-deploy-audits/2026-04-27-marketplace-live-stability|2026-04-27 Marketplace Live Stability Audit]] — post-deploy audit context.
 
 ## Open Questions / Next Steps
-- Owner-approved replay-index migration DDL phase.
 - Separate dependency-audit/cleanup phase for Node vulnerabilities.
 - Future owner-approved controlled payment regression for real valid payment and replay/wrong-signature rejection.
 - Held scheduler-job audits before enabling any held jobs.
@@ -62,3 +61,17 @@ Remaining risks:
 - `getTransaction` currently uses `maxSupportedTransactionVersion: 0`.
 - A future owner-approved controlled payment regression should verify deployed acceptance of a real valid Pump.fun payment and rejection of replay/wrong-signature cases.
 - Node dependency vulnerabilities remain for a separate dependency-audit phase.
+
+## Replay-index Preflight — Passed 2026-05-02
+Status: PASS / DDL not needed now.
+
+Confirmed launch hardening state:
+- No DDL was run and no production DB mutation occurred.
+- Admin aggregate duplicate counts were all zero for payment signatures, payment_intent signatures, active grants, and listing/user entitlements.
+- Existing valid production uniqueness protections already satisfy the replay-index hardening target.
+- The candidate DDL would likely be redundant, especially for `payments(tx_signature)`.
+
+Release guidance:
+- Stop; do not run replay-index DDL now.
+- Future replay-index DDL should be considered only after schema drift or duplicate-risk evidence appears.
+- Future DDL review must inspect semantic equivalence, not only index names.

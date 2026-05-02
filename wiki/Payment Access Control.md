@@ -13,7 +13,7 @@ aliases:
 Payment access control defines how AgentAscend grants paid access only after backend-owned payment verification succeeds.
 
 ## Key Current Status
-Backend remains the source of truth. Pump.fun access must be granted only after stored payment intent/invoice verification passes. Exact tx_signature binding is deployed; replay-index migration remains pending.
+Backend remains the source of truth. Pump.fun access must be granted only after stored payment intent/invoice verification passes. Exact tx_signature binding is deployed. Replay-index hardening target is satisfied by existing valid production indexes/constraints; replay-index DDL is not recommended unless future schema drift or duplicate risk appears.
 
 ## Important Links
 - [[Token Gated Access]]
@@ -35,7 +35,7 @@ Backend remains the source of truth. Pump.fun access must be granted only after 
 - [[raw/launch-evidence/2026-04-30-pumpfun-live-payment-evidence|2026-04-30 Pump.fun Live Payment Evidence]].
 
 ## Open Questions / Next Steps
-- Owner-approved replay-index migration.
+- Node dependency audit/cleanup.
 - Preserve backend-only access authority; never use frontend-only paid flags.
 - Keep unauthenticated payment/admin probes fail-closed.
 
@@ -60,3 +60,17 @@ Remaining risks:
 - `getTransaction` currently uses `maxSupportedTransactionVersion: 0`.
 - A future owner-approved controlled payment regression should verify deployed acceptance of a real valid Pump.fun payment and rejection of replay/wrong-signature cases.
 - Node dependency vulnerabilities remain for a separate dependency-audit phase.
+
+## Replay-index Preflight — Passed 2026-05-02
+Status: PASS / DDL not needed now.
+
+What was confirmed:
+- No DDL was run and no production DB mutation occurred.
+- Admin aggregate duplicate counts were all zero for payment signatures, payment_intent signatures, active grant groups, and listing/user entitlement groups.
+- Existing valid replay protections already satisfy the hardening target: `payments(tx_signature)`, nonempty `payment_intents(tx_signature)`, active grant uniqueness by intent/payment reference, and `marketplace_entitlements(listing_id, user_id)`.
+
+Operating guidance:
+- Stop; do not run replay-index DDL now.
+- Future DDL should inspect semantic equivalence first, not just `IF NOT EXISTS` by index name.
+- Do not drop existing production constraints/indexes unless separately inspected and approved.
+- If future DDL is ever needed, `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY` cannot run inside normal transactions.

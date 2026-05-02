@@ -3,7 +3,7 @@
 Related: [[Payment Access Control]], [[Pump.fun Tokenized Agent Payments]], [[Ops Runbook]], [[Known Issues]]
 
 ## Status
-Planning only. `npm audit --json` was run because it is read-only. No `npm audit fix`, package upgrade, lockfile rewrite, or helper code change was performed.
+Next hardening phase after replay-index preflight PASS. Planning only. Prior `npm audit --json` was read-only. No `npm audit fix`, package upgrade, lockfile rewrite, or helper code change has been approved by this document.
 
 ## Current direct dependencies
 - `@pump-fun/agent-payments-sdk` pinned at `3.0.2`.
@@ -31,3 +31,13 @@ Moderate chain:
 
 ## Future owner-approved cleanup prompt
 `I approve a docs-first and then code-reviewed dependency cleanup slice for node-payment-helper. Do not run npm audit fix automatically. First inspect available @pump-fun/agent-payments-sdk, @solana/web3.js, vitest, and vite versions and propose a compatibility-safe upgrade matrix. Then, if a low-risk dev-only update is available, update only package.json/package-lock.json, run npm ci, npm audit --json, npm run typecheck, npm run build, npm test, and relevant backend helper tests. Do not change payment verification semantics, do not call Pump.fun verify, do not create payment intents, and do not touch production.`
+
+
+## Scope guard for next phase
+- Do not run `npm audit fix` automatically.
+- Do not call Pump.fun verify.
+- Do not create payment intents.
+- Do not run payments or sign/send transactions.
+- Do not mutate production DB or scheduler state.
+- Do not change backend payment verification semantics while auditing dependencies.
+- Prefer docs-first compatibility matrix, then a minimal dev-only dependency update if low risk.
