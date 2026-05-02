@@ -58,7 +58,7 @@ AgentAscend is currently in a production-verification and consolidation phase. E
 - Owner-reported live canary evidence: marketplace purchase completed, buyer owned/unlocked the bought agent, creator dashboard showed claimable funds and buyback accounting, and the creator claim payout was received.
 
 ## Scheduler/ledger state
-Accurate release wording: Execution Ledger/Scheduler Ledger is production-enabled and audited for the approved scheduler workload. Held scheduler jobs remain intentionally disabled and require separate scoped audits before enablement.
+Accurate release wording: Execution Ledger/Scheduler Ledger is production-enabled and audited for the approved scheduler workload. The final scheduler posture is report-first: approved low-risk jobs are enabled, while remaining held jobs stay disabled unless separately approved for enablement.
 
 Enabled and audited scheduler jobs in production:
 - `default-backend-health-check`
@@ -75,6 +75,11 @@ Still disabled / held jobs in production:
 - `default-git-status-summary`
 - `default-roadmap-review`
 
+Held-job posture, 2026-05-02:
+- `default-telegram-status-summary` is patched and deployed as report-only by default at commit `31642a0ed52d8172759561eb5fe2788fe16745dc`. Its no-send canary passed with `mode=report_only`, `external_message_sent=false`, `send_enabled=false`, no `agent_findings` delta, and no payment/access/marketplace deltas. Outbound Telegram sends require `AGENT_RUNTIME_TELEGRAM_STATUS_SEND_ENABLED=true` and separate owner approval.
+- `default-roadmap-review` passed a scoped canary as a placeholder/report-first job. It does not call a model or mutate files and is safe to enable later if owner-approved.
+- `default-git-status-summary` is patched to fail closed safely when git is unavailable. Production currently lacks git, so keep it disabled unless the owner accepts sanitized failed/unavailable reports.
+
 Task worker enablement note, 2026-05-02:
 - Owner-approved canary for `default-task-queue-worker` processed 0 tasks.
 - Task worker scheduler metadata is aggregate-only: `processed`, `completed`, `failed`, and `output_count`.
@@ -84,7 +89,7 @@ Task worker enablement note, 2026-05-02:
 - Scheduled enablement of `default-task-queue-worker` can process real queued production tasks in future natural scheduler runs.
 
 Read-only DB audit on 2026-04-29 found:
-- 11 scheduler jobs total, 4 enabled.
+- 11 scheduler jobs total, 4 enabled at that time before later audited enablements.
 - 0 due-now enabled jobs at audit time.
 - Scheduler execution ledger rows exist for scheduled job runs.
 - Scheduler execution artifacts count is 0.

@@ -8,7 +8,7 @@ aliases:
 # Scheduler
 
 ## Summary
-Execution Ledger/Scheduler Ledger is production-enabled and audited for the approved scheduler workload. Three held scheduler jobs remain intentionally disabled and require separate scoped audits before enablement.
+Execution Ledger/Scheduler Ledger is production-enabled and audited for the approved scheduler workload. The current scheduler posture is report-first: eight jobs are enabled/audited, and three held jobs remain disabled after scoped audits/patches unless the owner separately approves enablement.
 
 ## Components
 - Scheduler runtime:
@@ -29,10 +29,10 @@ Execution Ledger/Scheduler Ledger is production-enabled and audited for the appr
   - failed payment replay review
   - access grant integrity check
   - task queue worker
-- Held jobs requiring separate audits:
-  - Telegram status summary
-  - git status summary
-  - roadmap review
+- Held jobs requiring separate owner-approved enablement:
+  - Telegram status summary: patched report-only by default, no-send canary passed, safe to enable later only with outbound sends disabled unless separately approved.
+  - git status summary: patched to fail closed safely, production git unavailable, keep disabled unless sanitized unavailable reports are acceptable.
+  - roadmap review: placeholder/report-first, no model/file mutation, canary passed and safe to enable later.
 
 ## What is working
 - Approved scheduler workload is enabled for report-first checks and audited task processing.
@@ -44,13 +44,17 @@ Execution Ledger/Scheduler Ledger is production-enabled and audited for the appr
 - Live backend health endpoint is ok.
 
 ## What is broken or unproven
-- Remaining held scheduler jobs are intentionally disabled pending separate audits.
+- Remaining held scheduler jobs are intentionally disabled after scoped audits/patches; enablement still requires explicit owner approval.
+- Outbound Telegram status summary sends are disabled by default and require `AGENT_RUNTIME_TELEGRAM_STATUS_SEND_ENABLED=true` plus separate owner approval.
+- Production git status reports currently fail/unavailable because git is not available in the production runtime; keep disabled unless that sanitized failed report is desired.
 - Any scheduler flag/job change or manual run remains out of scope without explicit approval.
 - Payment/security/tokenomics scheduler work needs Premium Strategic review before enablement.
 
 ## Next actions
 - Preserve approved enabled workload and keep task worker queue behavior monitored.
-- Audit remaining held jobs one at a time before enablement.
+- If desired, enable `default-telegram-status-summary` later as report-only with outbound sends still disabled; do not enable outbound sends without separate owner approval.
+- If desired, enable `default-roadmap-review` later as placeholder/report-first.
+- Keep `default-git-status-summary` disabled unless owner accepts sanitized unavailable/failure reports from production.
 - Do not run `/jobs/run-due` or manually trigger scheduler jobs during docs-only phases.
 - Keep scheduler reporting separated from payment/access enforcement changes.
 
@@ -80,11 +84,10 @@ This page was updated during the 2026-04-29 post-audit knowledge curation. Treat
 ## Recent Evidence
 - 2026-05-01: Linked evidence [[raw/backend-health/2026-04-29-0400]]
 
-## 2026-05-02 Task Worker Enablement
-- `default-task-queue-worker` is now enabled after an owner-approved scoped canary.
-- Canary processed 0 queued tasks and completed successfully.
-- Protected task/output/log/execution aggregates were unchanged except for the expected scheduler run record.
-- Payment/access/marketplace aggregates were unchanged.
-- Remaining held jobs stayed disabled: `default-telegram-status-summary`, `default-git-status-summary`, and `default-roadmap-review`.
-- Production `/health`, `/openapi.json`, Railway `AgentAscend`, Railway `AgentAscend-Scheduler`, and sanitized logs passed after enablement.
-- See [[raw/scheduler-runtime-audits/2026-05-02-task-worker-enablement|2026-05-02 Task Worker Enablement]].
+## 2026-05-02 Final Scheduler Posture
+- Enabled/audited jobs: `default-backend-health-check`, `default-integration-drift-check`, `default-wiki-consistency-check`, `default-todo-fixme-scan`, `default-payment-route-audit`, `default-failed-payment-replay-review`, `default-access-grant-integrity-check`, and `default-task-queue-worker`.
+- Held disabled jobs: `default-telegram-status-summary`, `default-git-status-summary`, and `default-roadmap-review`.
+- `default-telegram-status-summary` is report-only by default behind `AGENT_RUNTIME_TELEGRAM_STATUS_SEND_ENABLED=false`; commit `31642a0ed52d8172759561eb5fe2788fe16745dc` deployed successfully and the no-send canary passed with no protected deltas.
+- `default-roadmap-review` is a safe placeholder/report-first job with no model or file mutation and can be enabled later with owner approval.
+- `default-git-status-summary` fails closed safely when git is unavailable; production currently lacks git, so keep it disabled unless sanitized unavailable reports are acceptable.
+- See [[raw/scheduler-runtime-audits/2026-05-02-final-scheduler-posture|2026-05-02 Final Scheduler Posture]].

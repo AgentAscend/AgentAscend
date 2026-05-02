@@ -24,11 +24,11 @@ AgentAscend is not just a chatbot website. It is intended to become an infrastru
 
 ### Current production snapshot — 2026-05-02
 
-- Execution Ledger/Scheduler Ledger is production-enabled and audited for the approved scheduler workload. Held scheduler jobs remain intentionally disabled and require separate scoped audits before enablement.
+- Execution Ledger/Scheduler Ledger is production-enabled and audited for the approved scheduler workload; final scheduler posture is report-first with held jobs disabled unless separately approved.
 - Approved scheduler jobs enabled in production: backend health check, integration drift check, wiki consistency check, TODO/FIXME scan, payment route audit, failed payment/replay review, access grant integrity check, and task queue worker.
 - Task worker scheduled enablement passed an owner-approved empty-queue canary: processed 0 tasks, task worker metadata was aggregate-only, `output_ids` was absent from job metadata, and payment/access/marketplace aggregates stayed unchanged.
 - `AGENT_RUNTIME_TASK_WORKER_BACKGROUND_ENABLED` controls `create_task` background triggering separately from the `scheduled_jobs.enabled` state; `default-task-queue-worker` scheduled enablement can process real queued production tasks in future natural scheduler runs.
-- Held scheduler jobs disabled in production: Telegram status summary, git status summary, and roadmap review.
+- Held scheduler jobs disabled in production: Telegram status summary, git status summary, and roadmap review. Telegram status summary is report-only by default behind `AGENT_RUNTIME_TELEGRAM_STATUS_SEND_ENABLED=false` and passed a no-send canary at commit `31642a0ed52d8172759561eb5fe2788fe16745dc`; roadmap review passed a placeholder/report-first canary and is safe to enable later; git status summary fails closed safely when git is unavailable, and production currently lacks git, so keep it disabled unless the owner accepts sanitized unavailable reports.
 - Pump.fun/tokenized-agent payment routes are live and auth-gated: `POST /payments/pumpfun/create` and `POST /payments/pumpfun/verify`.
 - Live v0 frontend paid routes use the Pump.fun modal flow and production CSP allows SolanaTracker browser RPC over both `https://rpc.solanatracker.io` and `wss://rpc.solanatracker.io`.
 - Owner-reported canary: marketplace purchase completed, buyer ownership/unlock worked, creator dashboard accounting updated, and creator claim payout was received. Archive public transaction/sanitized evidence before using this as final launch proof.
