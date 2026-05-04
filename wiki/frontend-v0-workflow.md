@@ -9,50 +9,44 @@ aliases:
 # Frontend v0 Workflow
 
 ## Summary
-The frontend source of truth is each newly exported v0 ZIP. Audits must be fresh extractions with compile/parity gates and patch-only prompts.
+The frontend is managed through v0/Vercel iterations. Current work should be patch-only, backend-truth-first, and verified from fresh ZIP extraction plus live bundle/API checks.
 
-## Components
-- Current state: The frontend source of truth is each newly exported v0 ZIP. Audits must be fresh extractions with compile/parity gates and patch-only prompts.
-- Endpoints/files involved:
-  - `latest v0 ZIP`
-  - `lib/dashboard-api.ts`
-  - `hooks/useDashboardData.ts`
-  - `app/app/* pages`
-  - `scripts/source-truth-check.mjs when present`
-  - `live Vercel JS chunks`
+## Current frontend/product status
+Logged-in frontend remains the biggest product bottleneck. Pages needing real backend-aligned polish include:
+- `/app/overview`
+- `/app/agents`
+- `/app/deployments`
+- `/app/workflows`
+- `/app/tasks`
+- `/app/outputs`
+- `/app/executions`
+- `/app/token`
+- `/app/community`
+- `/app/settings`
 
-## What is working
-- Established workflow: fresh ZIP audit, static scans, live bundle verification, patch-only prompts.
+## Backend truth available now
+Live OpenAPI includes Forge capability/templates, agent definitions, run/deploy/workflow bridges, Command Center, deployment events, Pump.fun routes, marketplace/access surfaces, and execution routes. The next v0 prompts should wire UI to these contracts instead of showing fake local data.
 
-## What is broken or unproven
-- Current frontend issues remain: outputs SelectItem crash, task persistence/reload, workflow create incomplete, deployment/logs/scale missing actions.
+## Rules for v0 prompts
+- No redesign unless explicitly requested.
+- Patch only the named files/flows.
+- No fake localStorage unlock/payment/access/settings persistence.
+- Authenticated API empty state means real empty state, not demo fallback.
+- Local drafts are acceptable only for unpublished draft UX, not production ownership/access/payment truth.
+- Return changed-file summaries and verification output.
 
-## Next actions
-- Ask v0 for minimal patch-only changes.
-- Verify returned ZIP file identity and live Vercel bundle markers.
-- Run source-truth, typecheck, lint, build, audit.
+## Verification gates
+- Fresh ZIP extraction in `/tmp`.
+- `npm install`, typecheck/build/lint where available.
+- API adapter contract check against live OpenAPI.
+- Page-consumption gate: pages must actually render hook/API data, not merely import adapters.
+- Live Vercel route/chunk marker scan after deploy.
 
 ## Relationships
-- [[Auth]]
-- [[Database]]
-- [[Marketplace]]
-- [[Community]]
-- [[Tasks Outputs]]
-- [[Scheduler]]
-- [[Frontend v0 Workflow]]
-- [[Deployment]]
-- [[Known Issues]]
+- [[current-project-state|Current Project State]]
+- [[Launch Readiness]]
+- [[Pump.fun Tokenized Agent Payments]]
+- [[Payment Access Control]]
+- [[marketplace|Marketplace]]
+- [[known-issues|Known Issues]]
 - [[Roadmap]]
-
-## Safety notes
-- Do not redesign UI unless requested.
-- Do not accept source PASS as deployed PASS.
-
-## Notes
-This page was created/updated during the 2026-04-25 overnight knowledge/runtime improvement cycle. Treat source-level facts separately from live-production verification.
-
-## 2026-04-30 Knowledge Graph Status Update
-- Raw launch evidence, tokenized-agent, scheduler/cronjob, deploy-readiness, security, and Hermes runtime notes now link back to this hub graph.
-- Exact Pump.fun `tx_signature` binding hardening is implemented and deployed at commit `453df65aec69f7aa95b20bb1752f7d3af97ad488`.
-- Replay-index migration remains pending and must not be run without owner approval.
-- Node dependency audit remains pending as a separate hardening phase.

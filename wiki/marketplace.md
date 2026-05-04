@@ -8,58 +8,28 @@ aliases:
 # Marketplace
 
 ## Summary
-Marketplace backend routes and E2E tests exist. Pump.fun/tokenized-agent purchase, unlock, creator accounting, and claim flow have passed a live owner-reported canary; archive sanitized evidence before public launch claims.
+Marketplace is the product surface where listings, paid installs, creator accounting, and entitlements converge. Backend payment/access authority is now proven for a controlled Pump.fun listing-scoped purchase, while frontend marketplace/product polish remains a priority.
 
-## Components
-- Marketplace source:
-  - `backend/app/routes/marketplace.py`
-  - `backend/app/schemas/marketplace.py`
-  - `tests/test_marketplace_publish_e2e.py`
-  - v0 marketplace page/API adapter
-- Payment/access surfaces:
-  - Pump.fun create/verify endpoints
-  - backend-verified access grants
-  - creator accounting/claim flow
+## Current status
+- Pump.fun listing-scoped controlled regression passed.
+- Backend/admin evidence showed completed payment, payment_id, verified payment intent, access grant, listing-scoped true, and marketplace entitlement present.
+- Duplicate payment/access/entitlement groups remained zero.
+- Creator revenue/accounting observations in the evidence are owner-provided sanitized observations.
 
-## What is working
-- Backend marketplace route file exists.
-- E2E test file covers publish/discover and private draft behavior.
-- Active Pump.fun payment flow uses backend create/verify endpoints and backend-verified access.
-- Live canary reportedly completed purchase, ownership unlock, dashboard accounting, and creator claim payout.
-
-## What is broken or unproven
-- Live frontend publish wiring and Vercel bundle status need verification after each v0 deploy.
-- LocalStorage ghost drafts and stale publish flows remain a known risk.
-- Public launch claims still need archived public transaction IDs and sanitized UI/network evidence.
-
-## Next actions
-- Run marketplace publish E2E test locally when marketplace work is in scope.
-- Run live throwaway publish/list/discover smoke only in an explicitly approved production-smoke phase.
-- Scan v0 bundle for `deleteDraftListing(draft.id)` and absence of `markListingPublished(draft.id...)` success path.
-- Preserve payment/claim evidence without secrets, signed transactions, cookies, or wallet-private data.
-
-## Relationships
-- [[Auth]]
-- [[Database]]
-- [[Deployment]]
-- [[Scheduler]]
-- [[Frontend v0 Workflow]]
-- [[Known Issues]]
-- [[Roadmap]]
-
-## Safety notes
-- No marketplace financial/tokenomics decisions without approval.
-- Destructive delete tests must use throwaway owned data only.
-- Do not run real payments, wallet signing, SOL transfers, Pump.fun claims, buyback, or burn actions without explicit approval.
-
-## Notes
-This page was updated during the 2026-04-29 post-audit knowledge curation. Treat source-level facts separately from live-production verification.
-
-## 2026-04-30 Knowledge Graph Status Update
-- Raw launch evidence, tokenized-agent, scheduler/cronjob, deploy-readiness, security, and Hermes runtime notes now link back to this hub graph.
-- Exact Pump.fun `tx_signature` binding hardening is implemented and deployed at commit `453df65aec69f7aa95b20bb1752f7d3af97ad488`.
-- Replay-index migration remains pending and must not be run without owner approval.
-- Node dependency audit remains pending as a separate hardening phase.
+## Current risks
+- Frontend marketplace UI must refresh ownership/install state from backend, not localStorage.
+- Creator listing management should use backend-owned records and auth, not static/demo cards.
+- Public claims should distinguish backend-verified evidence from owner-provided UI/accounting observations.
 
 ## Recent Evidence
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-29-0803]]
+- [[raw/launch-evidence/2026-05-03-pumpfun-controlled-payment-regression-pass|2026-05-03 controlled Pump.fun payment regression PASS]]
+- [[Pump.fun Tokenized Agent Payments]]
+- [[Payment Access Control]]
+- [[Launch Readiness]]
+
+## Relationships
+- [[AgentAscend]]
+- [[Pump.fun Tokenized Agent Payments]]
+- [[Payment Access Control]]
+- [[frontend-v0-workflow|Frontend v0 Workflow]]
+- [[Roadmap]]

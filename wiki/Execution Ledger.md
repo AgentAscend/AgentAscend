@@ -9,27 +9,29 @@ aliases:
 # Execution Ledger
 
 ## Summary
-The Execution Ledger records execution events/artifacts and supports Scheduler Ledger auditability for AgentAscend runtime operations.
+The Execution Ledger records runtime events, artifacts, execution summaries, and scheduler run history for AgentAscend operations.
 
-## Key Current Status
-Execution Ledger/Scheduler Ledger is production-enabled and audited for the approved scheduler workload, including the task queue worker. Held scheduler jobs remain disabled after scoped audits/patches unless separately owner-approved.
-
-## Important Links
-- [[scheduler|Scheduler]]
-- [[Cronjobs]]
-- [[Ops Runbook]]
-- [[agent-execution-system]]
-- [[workflow-orchestration]]
+## Current status
+- Execution Ledger/Scheduler Ledger is production-enabled for the approved workload.
+- The task queue worker is enabled and can process queued production tasks during natural scheduler runs.
+- Deployment events backend slice is live: `GET /deployments/{deployment_id}/events`.
+- Command Center backend aggregate is live: `GET /dashboard/command-center`.
+- Full autonomous runtime worker behavior remains a later product/runtime slice.
 
 ## Recent Evidence
-- 2026-05-02: [[raw/scheduler-runtime-audits/2026-05-02-final-scheduler-posture|Final scheduler posture]] recorded the enabled/audited workload, held job safety conditions, Telegram report-only default, and task worker queue semantics.
-- 2026-05-02: [[raw/scheduler-runtime-audits/2026-05-02-task-worker-enablement|Task worker scheduler enablement canary]] passed with aggregate-only metadata and no payment/access/marketplace mutation.
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-29-0400]]
-- [[raw/scheduler-runtime-audits/2026-04-27-readonly-runtime-check|2026-04-27 Scheduler Runtime Read-only Check]].
-- [[raw/cronjob-audits/2026-04-27T11-20-17Z|2026-04-27 Cronjob Audit]].
+- [[raw/scheduler-runtime-audits/2026-05-02-final-scheduler-posture|2026-05-02 final scheduler posture]]
+- [[raw/scheduler-runtime-audits/2026-05-02-task-worker-enablement|2026-05-02 task worker enablement canary]]
+- Commit `26aa8ab` live OpenAPI verification for deployment events.
+- Commit `34a8c21` Command Center backend slice.
 
-## Open Questions / Next Steps
-- Keep approved scheduler workload monitored; `default-task-queue-worker` can process real queued production tasks in future natural scheduler runs.
-- Optional later enablement: `default-telegram-status-summary` as report-only with outbound sends disabled, and `default-roadmap-review` as placeholder/report-first.
-- Keep `default-git-status-summary` disabled unless owner accepts sanitized unavailable reports from production.
-- Continue monitoring orphan execution events/artifacts through read-only aggregate endpoints.
+## Relationships
+- [[scheduler|Scheduler]]
+- [[Cronjobs]]
+- [[Agent Architecture]]
+- [[agent-execution-system]]
+- [[workflow-orchestration]]
+- [[current-project-state|Current Project State]]
+
+## Next actions
+- Wire frontend Command Center and deployment event UI to backend truth.
+- Keep execution artifacts/logs sanitized; do not expose raw task body/output in docs or UI reports.

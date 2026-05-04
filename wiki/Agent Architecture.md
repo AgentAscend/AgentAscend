@@ -9,23 +9,29 @@ aliases:
 # Agent Architecture
 
 ## Summary
-Agent Architecture describes AgentAscend's AI agent platform structure: Hermes orchestration, future specialized agents, tools, payments, scheduler, and marketplace surfaces.
+Agent Architecture covers Hermes as project operator, Ascend Forge as product/runtime surface, and future specialized agents.
 
-## Key Current Status
-AgentAscend remains in MVP/soft-launch hardening. Multi-agent role setup is planning-only until payment/access and scheduler boundaries are stable.
+## Current status
+- Ascend Forge backend foundations are live: capabilities/templates, full agent definitions, run/deploy/workflow bridges, Command Center, and deployment events.
+- Full autonomous multi-agent marketplace/runtime execution is not yet the current focus.
+- Specialized agent setup should wait until v0 frontend/backend contracts are clearer.
 
-## Important Links
+## Future agent roles
+- Payment/Access Agent: audits payment/access contracts only; no production mutation without approval.
+- Frontend/v0 Agent: patch prompts and frontend parity gates.
+- Ledger/Scheduler Agent: execution/scheduler report-first checks; no scheduler changes without approval.
+- QA/Security Agent: release gates, secret scans, security regressions.
+- Docs/Memory Agent: wiki/raw/skills hygiene only.
+- Release/Ops Agent: deploy readiness reports and live verification.
+- Marketplace/Product Agent: listing/install/creator contract analysis.
+
+## Relationships
 - [[AgentAscend]]
-- [[Hermes]]
-- [[Split-Brain Autonomy]]
-- [[Tool System]]
-- [[Automation Engine]]
+- [[Execution Ledger]]
+- [[scheduler|Scheduler]]
+- [[frontend-v0-workflow|Frontend v0 Workflow]]
 - [[Roadmap]]
+- [[current-project-state|Current Project State]]
 
-## Recent Evidence
-- [[raw/overnight-handoff/2026-04-29-agentascend-state|2026-04-29 AgentAscend State Handoff]].
-- [[raw/research/2026-04-25-agent-platform-research|2026-04-25 Agent Platform Research]].
-
-## Open Questions / Next Steps
-- Define specialized agents only after replay/index/payment hardening is stable.
-- Maintain explicit allowed/forbidden scopes for each future agent.
+## Next actions
+Do not create autonomous agents yet. First complete frontend/product polish against live backend truth and define exact allowed/forbidden scopes per agent role.

@@ -9,69 +9,47 @@ aliases:
 # Launch Readiness
 
 ## Summary
-Launch readiness tracks whether AgentAscend is safe to present publicly: live API health, frontend/backend contract, payment/access proof, scheduler posture, and remaining hardening.
+Launch readiness tracks whether AgentAscend can be shown publicly without overstating product state. Current posture: payment/backend safety is strong enough for soft-launch messaging, but frontend product polish remains the main blocker to a confident broader launch.
 
-## Key Current Status
-Current soft-launch verdict: READY FOR SOFT LAUNCH / HARDENING ITEMS REMAIN. Live API health/OpenAPI/security gates are passing. Pump.fun exact tx_signature binding is implemented and deployed. Replay-index preflight passed and DDL is not needed now because existing valid indexes/constraints satisfy the target. Node dependency audit remains pending.
+## Current verdict
+READY FOR SOFT LAUNCH / HARDENING ITEMS REMAIN.
 
-## Important Links
+## What is complete
+- Live API health/OpenAPI/security headers verified at commit `26aa8ab`.
+- Pump.fun payment flow is live and auth-gated.
+- Controlled Pump.fun payment regression passed with public tx, backend verification, access grant, listing scope, marketplace entitlement, and zero duplicate groups.
+- Exact `tx_signature` binding hardening is deployed.
+- Replay-index preflight passed; DDL is not needed now.
+- Approved scheduler workload is enabled/audited; held jobs remain disabled under documented conditions.
+- Forge backend routes are live, including capability registry/templates, agent definitions, runtime bridges, Command Center, and deployment events.
+
+## Current launch risks
+- Logged-in frontend remains placeholder-heavy and must align to backend truth.
+- Production UI should not use localStorage as authority for access, payment, marketplace ownership, or settings.
+- Remaining Pump.fun/Solana transitive dependency advisories are accepted/monitored, not eliminated.
+- Owner-provided UI/revenue observations in payment evidence are sanitized statements, not raw screenshots or dashboard exports.
+
+## Recent Evidence
+- [[raw/launch-evidence/2026-05-03-pumpfun-controlled-payment-regression-pass|2026-05-03 controlled Pump.fun payment regression PASS]]
+- [[raw/security-reviews/2026-05-02-replay-index-preflight|2026-05-02 replay-index preflight PASS / DDL not needed]]
+- [[raw/scheduler-runtime-audits/2026-05-02-final-scheduler-posture|2026-05-02 final scheduler posture]]
+- [[raw/security-reviews/2026-05-02-node-helper-dependency-audit|2026-05-02 Node helper dependency audit baseline]]
+- Commits: `239fa79` dev dependency cleanup, `a8ad3ba` Pump.fun SDK 3.0.3, `2d00a31` controlled regression evidence, `5ac6d06` Forge definitions, `34a8c21` Command Center, `{prod_short}` deployment events.
+
+## Relationships
 - [[AgentAscend]]
+- [[current-project-state|Current Project State]]
 - [[Pump.fun Tokenized Agent Payments]]
 - [[Payment Access Control]]
 - [[marketplace|Marketplace]]
 - [[scheduler|Scheduler]]
+- [[frontend-v0-workflow|Frontend v0 Workflow]]
 - [[known-issues|Known Issues]]
-- [[Ops Runbook]]
+- [[Roadmap]]
 
-## Recent Evidence
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-29-0803]]
-- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-25]]
-- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-26]]
-- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-27]]
-- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-28]]
-- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-29]]
-- 2026-05-01: Linked evidence [[raw/db-integrity/2026-04-30]]
-- [[raw/launch-evidence/2026-04-30-pumpfun-live-payment-evidence|2026-04-30 Pump.fun Live Payment Evidence]] — public payment/claim evidence plus owner UI/accounting confirmation.
-- [[raw/launch-evidence/2026-04-29-pumpfun-live-payment-canary|2026-04-29 Pump.fun Live Payment Canary]] — earlier canary archive.
-- [[raw/post-deploy-audits/2026-04-27-marketplace-live-stability|2026-04-27 Marketplace Live Stability Audit]] — post-deploy audit context.
-
-## Open Questions / Next Steps
-- Separate dependency-audit/cleanup phase for Node vulnerabilities.
-- Future owner-approved controlled payment regression for real valid payment and replay/wrong-signature rejection.
-- Held scheduler-job audits before enabling any held jobs.
-
-## Exact tx_signature Binding Hardening — Completed 2026-04-30
-Status: implemented and deployed.
-
-Commit: `453df65aec69f7aa95b20bb1752f7d3af97ad488` (`Harden Pump.fun verification tx signature binding`).
-
-What changed:
-- Backend passes the user-submitted `tx_signature` to the Node helper as `txSignature`.
-- Node helper validates `txSignature` format.
-- Helper derives the exact invoice PDA using Pump.fun SDK `getInvoiceIdPDA`.
-- Helper checks the submitted signature appears in `getSignaturesForAddress(invoice PDA)`.
-- Helper fetches the submitted transaction with confirmed commitment and rejects missing/failed transactions.
-- Helper parses logs only while the current Solana log stack is inside the Pump.fun agent-payments program.
-- Helper decodes `AgentAcceptPaymentEvent` and exact-matches user, tokenizedAgentMint, currencyMint, amount, memo, startTime, endTime, and invoiceId.
-- Only after an exact event match does the helper call SDK `validateInvoicePayment`.
-- Helper returns `signatureBound` on successful helper responses.
-
-Remaining risks:
-- `getSignaturesForAddress(invoice PDA, limit 1000)` could theoretically miss a submitted tx if the invoice PDA has more than 1000 newer transactions.
-- `getTransaction` currently uses `maxSupportedTransactionVersion: 0`.
-- A future owner-approved controlled payment regression should verify deployed acceptance of a real valid Pump.fun payment and rejection of replay/wrong-signature cases.
-- Node dependency vulnerabilities remain for a separate dependency-audit phase.
-
-## Replay-index Preflight — Passed 2026-05-02
-Status: PASS / DDL not needed now.
-
-Confirmed launch hardening state:
-- No DDL was run and no production DB mutation occurred.
-- Admin aggregate duplicate counts were all zero for payment signatures, payment_intent signatures, active grants, and listing/user entitlements.
-- Existing valid production uniqueness protections already satisfy the replay-index hardening target.
-- The candidate DDL would likely be redundant, especially for `payments(tx_signature)`.
-
-Release guidance:
-- Stop; do not run replay-index DDL now.
-- Future replay-index DDL should be considered only after schema drift or duplicate-risk evidence appears.
-- Future DDL review must inspect semantic equivalence, not only index names.
+## Superseded blockers
+- “HSTS absent” is superseded by live checks showing HSTS present.
+- “Replay-index migration pending” is superseded by the preflight PASS / DDL-not-needed result.
+- “Exact tx_signature binding future work” is superseded by deployed hardening.
+- “Controlled payment regression pending” is superseded by the 2026-05-03 PASS archive.
+- “Forge routes not live” is superseded by live OpenAPI at commit `26aa8ab`.

@@ -1,3 +1,18 @@
+---
+type: security review
+project: AgentAscend
+date: 2026-05-02
+status: archived
+tags:
+  - agentascend
+related:
+  - "[[Payment Access Control]]"
+  - "[[Launch Readiness]]"
+  - "[[known-issues|Known Issues]]"
+---
+
+Related: [[Payment Access Control]], [[Launch Readiness]], [[known-issues|Known Issues]]
+
 # 2026-05-02 Replay-index Migration Preflight
 
 Unprocessed/source note for project state update.

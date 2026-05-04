@@ -1,3 +1,19 @@
+---
+type: security review
+project: AgentAscend
+date: 2026-05-02
+status: superseded
+tags:
+  - agentascend
+related:
+  - "[[Pump.fun Tokenized Agent Payments]]"
+  - "[[Payment Access Control]]"
+  - "[[known-issues|Known Issues]]"
+---
+
+Status: Superseded for dev/runtime version state by commits `239fa79` and `a8ad3ba`; remaining runtime transitive advisories are accepted/monitored.
+Related: [[Pump.fun Tokenized Agent Payments]], [[Payment Access Control]], [[known-issues|Known Issues]]
+
 # 2026-05-02 Node Helper Dependency Audit
 
 Unprocessed/source note for the AgentAscend Node helper dependency audit phase.
