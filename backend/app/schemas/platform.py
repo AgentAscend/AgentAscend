@@ -16,7 +16,7 @@ class DashboardAgent(BaseModel):
     agent_id: str
     name: str
     category: str
-    status: Literal["active", "idle", "paused", "error"]
+    status: Literal["draft", "active", "idle", "paused", "error"]
     task: str
     success_rate: float
 
@@ -39,7 +39,7 @@ class AgentRecord(BaseModel):
     name: str
     category: str
     description: str
-    status: Literal["active", "idle", "paused", "error"]
+    status: Literal["draft", "active", "idle", "paused", "error"]
     tasks_completed: int = 0
     success_rate: float = 0.0
     instructions: str | None = None
@@ -47,8 +47,8 @@ class AgentRecord(BaseModel):
     skills: list[str] = Field(default_factory=list)
     autonomy_level: str = "manual"
     visibility: str = "private"
-    deployment_environment: str = "production"
-    monetization: str = "private"
+    deployment_environment: str = "draft"
+    monetization: str = "disabled"
     workflow_id: str | None = None
     deployment_id: str | None = None
     marketplace_listing_id: str | None = None

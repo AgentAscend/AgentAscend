@@ -104,8 +104,8 @@ def _agent_payload(row) -> dict:
     payload["skills"] = _json_list(payload.pop("skills_json", None))
     payload["autonomy_level"] = payload.get("autonomy_level") or "manual"
     payload["visibility"] = payload.get("visibility") or "private"
-    payload["deployment_environment"] = payload.get("deployment_environment") or "production"
-    payload["monetization"] = payload.get("monetization") or "private"
+    payload["deployment_environment"] = payload.get("deployment_environment") or "draft"
+    payload["monetization"] = payload.get("monetization") or "disabled"
     return payload
 
 
@@ -980,14 +980,14 @@ class AgentCrudInput(BaseModel):
     name: str
     category: str
     description: str
-    status: str = "active"
+    status: str = "draft"
     instructions: str | None = None
     tools: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
     autonomy_level: str = "manual"
     visibility: str = "private"
-    deployment_environment: str = "production"
-    monetization: str = "private"
+    deployment_environment: str = "draft"
+    monetization: str = "disabled"
     workflow_id: str | None = None
     deployment_id: str | None = None
     marketplace_listing_id: str | None = None
@@ -1033,6 +1033,15 @@ def _normalized_string_list(values: list[str] | None) -> list[str]:
     return result
 
 
+def _validate_agent_capabilities(tools: list[str], skills: list[str]) -> None:
+    tool_ids = _registry_ids(AGENT_TOOL_REGISTRY, "tool_id")
+    skill_ids = _registry_ids(AGENT_SKILL_REGISTRY, "skill_id")
+    unknown_tools = [tool for tool in tools if tool not in tool_ids]
+    unknown_skills = [skill for skill in skills if skill not in skill_ids]
+    if unknown_tools or unknown_skills:
+        fail(400, "invalid_agent_capability", "Agent config references unavailable tools or skills")
+
+
 def _get_owned_agent_row(conn, agent_id: str, actor: str):
     _require_agent_owner(conn, agent_id, actor)
     return conn.execute(f"SELECT {AGENT_SELECT_COLUMNS} FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
@@ -1042,6 +1051,9 @@ def _get_owned_agent_row(conn, agent_id: str, actor: str):
 def create_agent(payload: AgentCrudInput, authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)
     agent_id = f"agt_{secrets.token_hex(6)}"
+    tools = _normalized_string_list(payload.tools)
+    skills = _normalized_string_list(payload.skills)
+    _validate_agent_capabilities(tools, skills)
 
     with get_connection() as conn:
         conn.execute(
@@ -1062,8 +1074,8 @@ def create_agent(payload: AgentCrudInput, authorization: str | None = Header(def
                 payload.description,
                 payload.status,
                 payload.instructions,
-                json.dumps(_normalized_string_list(payload.tools)),
-                json.dumps(_normalized_string_list(payload.skills)),
+                json.dumps(tools),
+                json.dumps(skills),
                 payload.autonomy_level,
                 payload.visibility,
                 payload.deployment_environment,
@@ -1074,6 +1086,7 @@ def create_agent(payload: AgentCrudInput, authorization: str | None = Header(def
             ),
         )
         conn.commit()
+        row = conn.execute(f"SELECT {AGENT_SELECT_COLUMNS} FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
 
     _audit(
         actor,
@@ -1082,12 +1095,12 @@ def create_agent(payload: AgentCrudInput, authorization: str | None = Header(def
         agent_id,
         {
             "category": payload.category,
-            "tools_count": len(_normalized_string_list(payload.tools)),
-            "skills_count": len(_normalized_string_list(payload.skills)),
+            "tools_count": len(tools),
+            "skills_count": len(skills),
             "autonomy_level": payload.autonomy_level,
         },
     )
-    return {"status": "ok", "agent_id": agent_id}
+    return {"status": "ok", "agent_id": agent_id, "agent": _agent_payload(row)}
 
 
 class AgentTemplateCreateInput(BaseModel):
@@ -1188,7 +1201,7 @@ AGENT_TEMPLATE_REGISTRY = [
         "skills": ["research", "reporting"],
         "autonomy_level": "manual",
         "visibility": "private",
-        "deployment_environment": "production",
+        "deployment_environment": "draft",
         "approval_required": True,
     },
     {
@@ -1201,7 +1214,7 @@ AGENT_TEMPLATE_REGISTRY = [
         "skills": ["workflow_orchestration", "reporting"],
         "autonomy_level": "manual",
         "visibility": "private",
-        "deployment_environment": "production",
+        "deployment_environment": "draft",
         "approval_required": True,
     },
     {
@@ -1214,7 +1227,7 @@ AGENT_TEMPLATE_REGISTRY = [
         "skills": ["research", "content_generation", "seo_planning"],
         "autonomy_level": "manual",
         "visibility": "private",
-        "deployment_environment": "production",
+        "deployment_environment": "draft",
         "approval_required": True,
     },
 ]
@@ -1289,6 +1302,13 @@ def get_agent(agent_id: str, authorization: str | None = Header(default=None)):
 def patch_agent_config(agent_id: str, payload: AgentConfigPatchInput, authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)
     updates = payload.model_dump(exclude_unset=True)
+    if "tools" in updates or "skills" in updates:
+        with get_connection() as conn:
+            current = _get_owned_agent_row(conn, agent_id, actor)
+        current_payload = _agent_payload(current)
+        tools = _normalized_string_list(updates.get("tools", current_payload["tools"]))
+        skills = _normalized_string_list(updates.get("skills", current_payload["skills"]))
+        _validate_agent_capabilities(tools, skills)
     allowed_columns = {
         "name": "name",
         "category": "category",
