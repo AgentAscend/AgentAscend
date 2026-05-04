@@ -1090,6 +1090,191 @@ def create_agent(payload: AgentCrudInput, authorization: str | None = Header(def
     return {"status": "ok", "agent_id": agent_id}
 
 
+class AgentTemplateCreateInput(BaseModel):
+    template_id: str
+    name: str
+    category: str | None = None
+    description: str
+    autonomy_level: str | None = None
+    visibility: str | None = None
+    deployment_environment: str | None = None
+
+
+AGENT_TOOL_REGISTRY = [
+    {
+        "tool_id": "web_search",
+        "name": "Web Search",
+        "category": "research",
+        "description": "Search public web sources for current information.",
+        "risk_level": "low",
+        "requires_approval": False,
+        "enabled": True,
+    },
+    {
+        "tool_id": "summarizer",
+        "name": "Summarizer",
+        "category": "analysis",
+        "description": "Condense source material into structured summaries and reports.",
+        "risk_level": "low",
+        "requires_approval": False,
+        "enabled": True,
+    },
+    {
+        "tool_id": "workflow_runner",
+        "name": "Workflow Runner",
+        "category": "automation",
+        "description": "Run approved AgentAscend workflow graphs for the agent owner.",
+        "risk_level": "medium",
+        "requires_approval": True,
+        "enabled": True,
+    },
+    {
+        "tool_id": "content_drafter",
+        "name": "Content Drafter",
+        "category": "creation",
+        "description": "Draft user-reviewable content from instructions, research, and templates.",
+        "risk_level": "low",
+        "requires_approval": False,
+        "enabled": True,
+    },
+]
+
+AGENT_SKILL_REGISTRY = [
+    {
+        "skill_id": "research",
+        "name": "Research",
+        "category": "analysis",
+        "description": "Collect, compare, and summarize public information with source-aware notes.",
+        "output_schema": "structured_findings",
+    },
+    {
+        "skill_id": "reporting",
+        "name": "Reporting",
+        "category": "writing",
+        "description": "Turn findings into concise operator-ready reports.",
+        "output_schema": "report",
+    },
+    {
+        "skill_id": "workflow_orchestration",
+        "name": "Workflow Orchestration",
+        "category": "automation",
+        "description": "Plan and coordinate safe workflow steps with explicit approval gates.",
+        "output_schema": "workflow_run_plan",
+    },
+    {
+        "skill_id": "content_generation",
+        "name": "Content Generation",
+        "category": "writing",
+        "description": "Draft reviewable content from a user mission and gathered context.",
+        "output_schema": "draft_content",
+    },
+    {
+        "skill_id": "seo_planning",
+        "name": "SEO Planning",
+        "category": "marketing",
+        "description": "Plan keywords, outlines, and metadata without fake traffic or ranking claims.",
+        "output_schema": "seo_brief",
+    },
+]
+
+AGENT_TEMPLATE_REGISTRY = [
+    {
+        "template_id": "research_agent",
+        "name": "Research Agent",
+        "category": "Research",
+        "description": "Research public information and prepare a structured report.",
+        "instructions": "Research public sources, summarize findings, note uncertainty, and avoid unsupported claims.",
+        "tools": ["web_search", "summarizer"],
+        "skills": ["research", "reporting"],
+        "autonomy_level": "manual",
+        "visibility": "private",
+        "deployment_environment": "production",
+        "approval_required": True,
+    },
+    {
+        "template_id": "workflow_automation_agent",
+        "name": "Workflow Automation Agent",
+        "category": "Automation",
+        "description": "Coordinate approved workflow steps and produce execution summaries.",
+        "instructions": "Run only owner-approved workflow steps, stop at approval gates, and record every output.",
+        "tools": ["workflow_runner", "summarizer"],
+        "skills": ["workflow_orchestration", "reporting"],
+        "autonomy_level": "manual",
+        "visibility": "private",
+        "deployment_environment": "production",
+        "approval_required": True,
+    },
+    {
+        "template_id": "seo_content_agent",
+        "name": "SEO Content Agent",
+        "category": "Marketing",
+        "description": "Research keywords and draft reviewable SEO content.",
+        "instructions": "Build SEO briefs and draft content from public research. Do not invent metrics, rankings, traffic, or authority claims.",
+        "tools": ["web_search", "summarizer"],
+        "skills": ["research", "content_generation", "seo_planning"],
+        "autonomy_level": "manual",
+        "visibility": "private",
+        "deployment_environment": "production",
+        "approval_required": True,
+    },
+]
+
+
+def _agent_template(template_id: str) -> dict | None:
+    for template in AGENT_TEMPLATE_REGISTRY:
+        if template["template_id"] == template_id:
+            return template
+    return None
+
+
+def _registry_ids(items: list[dict], key: str) -> set[str]:
+    return {str(item[key]) for item in items}
+
+
+def _validate_template_capabilities(template: dict) -> None:
+    tool_ids = _registry_ids(AGENT_TOOL_REGISTRY, "tool_id")
+    skill_ids = _registry_ids(AGENT_SKILL_REGISTRY, "skill_id")
+    missing_tools = [tool for tool in template["tools"] if tool not in tool_ids]
+    missing_skills = [skill for skill in template["skills"] if skill not in skill_ids]
+    if missing_tools or missing_skills:
+        fail(500, "template_config_error", "Agent template references unavailable capabilities")
+
+
+@router.get("/agent-capabilities")
+def list_agent_capabilities():
+    return {
+        "status": "ok",
+        "tools": AGENT_TOOL_REGISTRY,
+        "skills": AGENT_SKILL_REGISTRY,
+        "templates": AGENT_TEMPLATE_REGISTRY,
+    }
+
+
+@router.post("/agents/from-template")
+def create_agent_from_template(payload: AgentTemplateCreateInput, authorization: str | None = Header(default=None)):
+    template = _agent_template(payload.template_id)
+    if not template:
+        fail(404, "not_found", "Agent template not found")
+    _validate_template_capabilities(template)
+    agent_payload = AgentCrudInput(
+        name=payload.name,
+        category=payload.category or template["category"],
+        description=payload.description,
+        status="active",
+        instructions=template["instructions"],
+        tools=list(template["tools"]),
+        skills=list(template["skills"]),
+        autonomy_level=payload.autonomy_level or template["autonomy_level"],
+        visibility=payload.visibility or template["visibility"],
+        deployment_environment=payload.deployment_environment or template["deployment_environment"],
+        monetization="private",
+    )
+    result = create_agent(agent_payload, authorization=authorization)
+    result["template_id"] = payload.template_id
+    result["capabilities"] = {"tools": list(template["tools"]), "skills": list(template["skills"])}
+    return result
+
+
 @router.get("/agents/{agent_id}")
 def get_agent(agent_id: str, authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)

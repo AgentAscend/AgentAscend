@@ -181,6 +181,69 @@ def test_forge_workflow_run_endpoint_records_real_run(client: TestClient):
     assert recorded["status"] == "success"
 
 
+def test_forge_capability_registry_exposes_backend_owned_templates_tools_and_skills(client: TestClient):
+    response = client.get("/agent-capabilities")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "ok"
+    tool_ids = {tool["tool_id"] for tool in body["tools"]}
+    skill_ids = {skill["skill_id"] for skill in body["skills"]}
+    template_ids = {template["template_id"] for template in body["templates"]}
+    assert {"web_search", "summarizer", "workflow_runner"}.issubset(tool_ids)
+    assert {"research", "reporting", "workflow_orchestration"}.issubset(skill_ids)
+    assert {"research_agent", "workflow_automation_agent", "seo_content_agent"}.issubset(template_ids)
+
+    research_template = next(template for template in body["templates"] if template["template_id"] == "research_agent")
+    assert research_template["tools"] == ["web_search", "summarizer"]
+    assert research_template["skills"] == ["research", "reporting"]
+    assert research_template["autonomy_level"] == "manual"
+    assert research_template["approval_required"] is True
+
+
+def test_forge_create_from_template_resolves_real_backend_capabilities(client: TestClient):
+    _user_id, token = _signup(client, "forge-template-owner@example.com")
+
+    response = client.post(
+        "/agents/from-template",
+        headers=_auth_header(token),
+        json={
+            "template_id": "seo_content_agent",
+            "name": "SEO Content Operator",
+            "description": "Research keywords and draft SEO content for AgentAscend.",
+            "category": "Marketing",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["template_id"] == "seo_content_agent"
+    agent_id = body["agent_id"]
+
+    detail = client.get(f"/agents/{agent_id}", headers=_auth_header(token))
+    assert detail.status_code == 200, detail.text
+    agent = detail.json()["agent"]
+    assert agent["name"] == "SEO Content Operator"
+    assert agent["category"] == "Marketing"
+    assert agent["tools"] == ["web_search", "summarizer"]
+    assert agent["skills"] == ["research", "content_generation", "seo_planning"]
+    assert agent["autonomy_level"] == "manual"
+    assert "SEO" in agent["instructions"]
+
+
+def test_forge_template_create_rejects_unknown_template(client: TestClient):
+    _user_id, token = _signup(client, "forge-template-unknown@example.com")
+
+    response = client.post(
+        "/agents/from-template",
+        headers=_auth_header(token),
+        json={"template_id": "not_real", "name": "Bad", "category": "Ops", "description": "Bad template"},
+    )
+
+    assert response.status_code == 404, response.text
+
+
 def test_forge_agent_deploy_creates_agent_scoped_deployment(client: TestClient):
     _user_id, token = _signup(client, "forge-deploy-owner@example.com")
     created = client.post(
