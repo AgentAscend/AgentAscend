@@ -925,6 +925,16 @@ def _init_sqlite_db():
                 status TEXT NOT NULL,
                 tasks_completed INTEGER NOT NULL DEFAULT 0,
                 success_rate REAL NOT NULL DEFAULT 0,
+                instructions TEXT,
+                tools_json TEXT,
+                skills_json TEXT,
+                autonomy_level TEXT NOT NULL DEFAULT 'manual',
+                visibility TEXT NOT NULL DEFAULT 'private',
+                deployment_environment TEXT NOT NULL DEFAULT 'production',
+                monetization TEXT NOT NULL DEFAULT 'private',
+                workflow_id TEXT,
+                deployment_id TEXT,
+                marketplace_listing_id TEXT,
                 created_at DATETIME NOT NULL,
                 updated_at DATETIME NOT NULL
             )
@@ -932,8 +942,22 @@ def _init_sqlite_db():
         )
 
         agent_columns = {row[1] for row in conn.execute("PRAGMA table_info(agents)").fetchall()}
-        if "owner_user_id" not in agent_columns:
-            conn.execute("ALTER TABLE agents ADD COLUMN owner_user_id TEXT")
+        agent_column_migrations = {
+            "owner_user_id": "TEXT",
+            "instructions": "TEXT",
+            "tools_json": "TEXT",
+            "skills_json": "TEXT",
+            "autonomy_level": "TEXT NOT NULL DEFAULT 'manual'",
+            "visibility": "TEXT NOT NULL DEFAULT 'private'",
+            "deployment_environment": "TEXT NOT NULL DEFAULT 'production'",
+            "monetization": "TEXT NOT NULL DEFAULT 'private'",
+            "workflow_id": "TEXT",
+            "deployment_id": "TEXT",
+            "marketplace_listing_id": "TEXT",
+        }
+        for column, column_type in agent_column_migrations.items():
+            if column not in agent_columns:
+                conn.execute(f"ALTER TABLE agents ADD COLUMN {column} {column_type}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_agents_owner_user_id ON agents(owner_user_id)")
 
         conn.execute(
@@ -1606,6 +1630,16 @@ _POSTGRES_TABLE_DDL = [
         status TEXT NOT NULL,
         tasks_completed INTEGER NOT NULL DEFAULT 0,
         success_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+        instructions TEXT,
+        tools_json TEXT,
+        skills_json TEXT,
+        autonomy_level TEXT NOT NULL DEFAULT 'manual',
+        visibility TEXT NOT NULL DEFAULT 'private',
+        deployment_environment TEXT NOT NULL DEFAULT 'production',
+        monetization TEXT NOT NULL DEFAULT 'private',
+        workflow_id TEXT,
+        deployment_id TEXT,
+        marketplace_listing_id TEXT,
         created_at TIMESTAMPTZ NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL
     )""",
@@ -1914,7 +1948,19 @@ _POSTGRES_COLUMN_MIGRATIONS = {
         ("currency", "TEXT"),
         ("chain", "TEXT"),
     ],
-    "agents": [("owner_user_id", "TEXT")],
+    "agents": [
+        ("owner_user_id", "TEXT"),
+        ("instructions", "TEXT"),
+        ("tools_json", "TEXT"),
+        ("skills_json", "TEXT"),
+        ("autonomy_level", "TEXT NOT NULL DEFAULT 'manual'"),
+        ("visibility", "TEXT NOT NULL DEFAULT 'private'"),
+        ("deployment_environment", "TEXT NOT NULL DEFAULT 'production'"),
+        ("monetization", "TEXT NOT NULL DEFAULT 'private'"),
+        ("workflow_id", "TEXT"),
+        ("deployment_id", "TEXT"),
+        ("marketplace_listing_id", "TEXT"),
+    ],
     "tasks": [
         ("user_id", "TEXT"), ("agent_id", "TEXT"), ("type", "TEXT NOT NULL DEFAULT 'general'"),
         ("error_message", "TEXT"), ("created_at", "TIMESTAMPTZ"),

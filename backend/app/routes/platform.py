@@ -7,7 +7,7 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Header, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.app.db.session import get_connection
 from backend.app.schemas.platform import (
@@ -82,6 +82,39 @@ def _row_dict(row):
         else:
             result[k] = v
     return result
+
+
+def _json_list(value) -> list[str]:
+    if value in (None, ""):
+        return []
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed if str(item).strip()]
+
+
+def _agent_payload(row) -> dict:
+    payload = _row_dict(row)
+    if payload is None:
+        return None
+    payload["tools"] = _json_list(payload.pop("tools_json", None))
+    payload["skills"] = _json_list(payload.pop("skills_json", None))
+    payload["autonomy_level"] = payload.get("autonomy_level") or "manual"
+    payload["visibility"] = payload.get("visibility") or "private"
+    payload["deployment_environment"] = payload.get("deployment_environment") or "production"
+    payload["monetization"] = payload.get("monetization") or "private"
+    return payload
+
+
+AGENT_SELECT_COLUMNS = """
+    agent_id, name, category, description, status, tasks_completed, success_rate,
+    instructions, tools_json, skills_json, autonomy_level, visibility,
+    deployment_environment, monetization, workflow_id, deployment_id,
+    marketplace_listing_id, created_at, updated_at
+"""
 
 
 def _authorized_scope_user_id(user_id: str | None, authorization: str | None) -> str:
@@ -175,9 +208,8 @@ def list_agents(authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)
     with get_connection() as conn:
         rows = conn.execute(
-            """
-            SELECT a.agent_id, a.name, a.category, a.description, a.status,
-                   a.tasks_completed, a.success_rate, a.created_at, a.updated_at
+            f"""
+            SELECT {AGENT_SELECT_COLUMNS}
             FROM agents a
             WHERE COALESCE(
                 a.owner_user_id,
@@ -196,7 +228,7 @@ def list_agents(authorization: str | None = Header(default=None)):
             (actor,),
         ).fetchall()
 
-    return {"status": "ok", "agents": [AgentRecord(**_row_dict(r)) for r in rows]}
+    return {"status": "ok", "agents": [AgentRecord(**_agent_payload(r)) for r in rows]}
 
 
 @router.post("/agents/{agent_id}/actions", response_model=AgentActionResponse)
@@ -216,15 +248,15 @@ def act_on_agent(agent_id: str, payload: AgentActionRequest, authorization: str 
         )
         conn.commit()
         row = conn.execute(
-            """
-            SELECT agent_id, name, category, description, status, tasks_completed, success_rate, created_at, updated_at
+            f"""
+            SELECT {AGENT_SELECT_COLUMNS}
             FROM agents
             WHERE agent_id=?
             """,
             (agent_id,),
         ).fetchone()
 
-    return {"status": "ok", "agent": AgentRecord(**_row_dict(row))}
+    return {"status": "ok", "agent": AgentRecord(**_agent_payload(row))}
 
 
 @router.get("/deployments", response_model=DeploymentListResponse)
@@ -949,6 +981,61 @@ class AgentCrudInput(BaseModel):
     category: str
     description: str
     status: str = "active"
+    instructions: str | None = None
+    tools: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    autonomy_level: str = "manual"
+    visibility: str = "private"
+    deployment_environment: str = "production"
+    monetization: str = "private"
+    workflow_id: str | None = None
+    deployment_id: str | None = None
+    marketplace_listing_id: str | None = None
+
+
+class AgentConfigPatchInput(BaseModel):
+    name: str | None = None
+    category: str | None = None
+    description: str | None = None
+    status: str | None = None
+    instructions: str | None = None
+    tools: list[str] | None = None
+    skills: list[str] | None = None
+    autonomy_level: str | None = None
+    visibility: str | None = None
+    deployment_environment: str | None = None
+    monetization: str | None = None
+    workflow_id: str | None = None
+    deployment_id: str | None = None
+    marketplace_listing_id: str | None = None
+
+
+class AgentRunInput(BaseModel):
+    title: str
+    type: str = "general"
+    priority: str = "medium"
+
+
+class AgentDeployInput(BaseModel):
+    environment: str = "production"
+    region: str = "us-east"
+    status: str = "running"
+
+
+def _normalized_string_list(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    result = []
+    for value in values:
+        normalized = str(value).strip()
+        if normalized and normalized not in result:
+            result.append(normalized)
+    return result
+
+
+def _get_owned_agent_row(conn, agent_id: str, actor: str):
+    _require_agent_owner(conn, agent_id, actor)
+    return conn.execute(f"SELECT {AGENT_SELECT_COLUMNS} FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
 
 
 @router.post("/agents")
@@ -959,14 +1046,47 @@ def create_agent(payload: AgentCrudInput, authorization: str | None = Header(def
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO agents(agent_id, owner_user_id, name, category, description, status, tasks_completed, success_rate, created_at, updated_at)
-            VALUES(?, ?, ?, ?, ?, ?, 0, 0, datetime('now'), datetime('now'))
+            INSERT INTO agents(
+                agent_id, owner_user_id, name, category, description, status,
+                tasks_completed, success_rate, instructions, tools_json, skills_json,
+                autonomy_level, visibility, deployment_environment, monetization,
+                workflow_id, deployment_id, marketplace_listing_id, created_at, updated_at
+            )
+            VALUES(?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
             """,
-            (agent_id, actor, payload.name, payload.category, payload.description, payload.status),
+            (
+                agent_id,
+                actor,
+                payload.name,
+                payload.category,
+                payload.description,
+                payload.status,
+                payload.instructions,
+                json.dumps(_normalized_string_list(payload.tools)),
+                json.dumps(_normalized_string_list(payload.skills)),
+                payload.autonomy_level,
+                payload.visibility,
+                payload.deployment_environment,
+                payload.monetization,
+                payload.workflow_id,
+                payload.deployment_id,
+                payload.marketplace_listing_id,
+            ),
         )
         conn.commit()
 
-    _audit(actor, "agent.create", "agent", agent_id, {"category": payload.category})
+    _audit(
+        actor,
+        "agent.create",
+        "agent",
+        agent_id,
+        {
+            "category": payload.category,
+            "tools_count": len(_normalized_string_list(payload.tools)),
+            "skills_count": len(_normalized_string_list(payload.skills)),
+            "autonomy_level": payload.autonomy_level,
+        },
+    )
     return {"status": "ok", "agent_id": agent_id}
 
 
@@ -974,35 +1094,111 @@ def create_agent(payload: AgentCrudInput, authorization: str | None = Header(def
 def get_agent(agent_id: str, authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)
     with get_connection() as conn:
-        _require_agent_owner(conn, agent_id, actor)
-        row = conn.execute(
-            """
-            SELECT agent_id, name, category, description, status, tasks_completed, success_rate, created_at, updated_at
-            FROM agents WHERE agent_id=?
-            """,
-            (agent_id,),
-        ).fetchone()
+        row = _get_owned_agent_row(conn, agent_id, actor)
     if not row:
         fail(404, "not_found", "Agent not found")
-    return {"status": "ok", "agent": _row_dict(row)}
+    return {"status": "ok", "agent": _agent_payload(row)}
+
+
+@router.patch("/agents/{agent_id}/config")
+def patch_agent_config(agent_id: str, payload: AgentConfigPatchInput, authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
+    updates = payload.model_dump(exclude_unset=True)
+    allowed_columns = {
+        "name": "name",
+        "category": "category",
+        "description": "description",
+        "status": "status",
+        "instructions": "instructions",
+        "tools": "tools_json",
+        "skills": "skills_json",
+        "autonomy_level": "autonomy_level",
+        "visibility": "visibility",
+        "deployment_environment": "deployment_environment",
+        "monetization": "monetization",
+        "workflow_id": "workflow_id",
+        "deployment_id": "deployment_id",
+        "marketplace_listing_id": "marketplace_listing_id",
+    }
+    assignments: list[str] = []
+    values: list[object] = []
+    for field, value in updates.items():
+        column = allowed_columns[field]
+        assignments.append(f"{column}=?")
+        if field in {"tools", "skills"}:
+            values.append(json.dumps(_normalized_string_list(value)))
+        else:
+            values.append(value)
+    if not assignments:
+        return get_agent(agent_id, authorization=authorization)
+
+    with get_connection() as conn:
+        _require_agent_owner(conn, agent_id, actor)
+        values.append(agent_id)
+        conn.execute(
+            f"UPDATE agents SET {', '.join(assignments)}, updated_at=datetime('now') WHERE agent_id=?",
+            tuple(values),
+        )
+        conn.commit()
+    _audit(actor, "agent.config.update", "agent", agent_id, {"fields": sorted(updates.keys())})
+    return get_agent(agent_id, authorization=authorization)
 
 
 @router.patch("/agents/{agent_id}")
 def patch_agent(agent_id: str, payload: AgentCrudInput, authorization: str | None = Header(default=None)):
+    return patch_agent_config(agent_id, AgentConfigPatchInput(**payload.model_dump()), authorization=authorization)
+
+
+@router.post("/agents/{agent_id}/run")
+def run_agent(agent_id: str, payload: AgentRunInput, background_tasks: BackgroundTasks, authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)
     with get_connection() as conn:
-        _require_agent_owner(conn, agent_id, actor)
+        agent = _get_owned_agent_row(conn, agent_id, actor)
+    if not agent:
+        fail(404, "not_found", "Agent not found")
+
+    task_result = create_task(
+        TaskCreateInput(title=payload.title, type=payload.type, agent_id=agent_id, priority=payload.priority, assigned_to=agent_id),
+        background_tasks,
+        authorization=authorization,
+    )
+    _audit(actor, "agent.run", "agent", agent_id, {"task_id": task_result["task_id"], "priority": payload.priority})
+    return {"status": "ok", "agent_id": agent_id, "task_id": task_result["task_id"]}
+
+
+@router.post("/agents/{agent_id}/deploy")
+def deploy_agent(agent_id: str, payload: AgentDeployInput, authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
+    with get_connection() as conn:
+        agent = _get_owned_agent_row(conn, agent_id, actor)
+        if not agent:
+            fail(404, "not_found", "Agent not found")
+        deployment_id = f"dep_{secrets.token_hex(5)}"
+        conn.execute(
+            """
+            INSERT INTO deployments(deployment_id, name, environment, status, region, agents_count, cpu_percent, memory_percent, requests_per_day, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?, 1, 0, 0, 0, datetime('now'), datetime('now'))
+            """,
+            (deployment_id, f"{agent['name']} deployment", payload.environment, payload.status, payload.region),
+        )
+        conn.execute(
+            """
+            INSERT INTO deployment_metrics(deployment_id, cpu_percent, memory_percent, p95_latency_ms, error_rate, recorded_at)
+            VALUES (?, 0, 0, 0, 0, datetime('now'))
+            """,
+            (deployment_id,),
+        )
         conn.execute(
             """
             UPDATE agents
-            SET name=?, category=?, description=?, status=?, updated_at=datetime('now')
+            SET deployment_id=?, deployment_environment=?, status='active', updated_at=datetime('now')
             WHERE agent_id=?
             """,
-            (payload.name, payload.category, payload.description, payload.status, agent_id),
+            (deployment_id, payload.environment, agent_id),
         )
         conn.commit()
-    _audit(actor, "agent.update", "agent", agent_id, {"category": payload.category, "status": payload.status})
-    return get_agent(agent_id, authorization=authorization)
+    _audit(actor, "agent.deploy", "agent", agent_id, {"deployment_id": deployment_id, "environment": payload.environment})
+    return {"status": "ok", "agent_id": agent_id, "deployment_id": deployment_id}
 
 
 @router.delete("/agents/{agent_id}")
@@ -1096,6 +1292,10 @@ class WorkflowGraphInput(BaseModel):
     nodes: list[dict]
 
 
+class WorkflowRunInput(BaseModel):
+    metadata: dict = Field(default_factory=dict)
+
+
 @router.post("/workflows")
 def create_workflow(payload: WorkflowCrudInput, authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)
@@ -1173,6 +1373,35 @@ def list_workflow_runs(workflow_id: str):
             (workflow_id,),
         ).fetchall()
     return {"status": "ok", "workflow_id": workflow_id, "runs": [_row_dict(r) for r in rows]}
+
+
+@router.post("/workflows/{workflow_id}/run")
+def run_workflow(workflow_id: str, payload: WorkflowRunInput, authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
+    run_id = f"run_{secrets.token_hex(6)}"
+    with get_connection() as conn:
+        exists = conn.execute("SELECT 1 FROM workflows WHERE workflow_id=?", (workflow_id,)).fetchone()
+        if not exists:
+            fail(404, "not_found", "Workflow not found")
+        node_count = conn.execute("SELECT COUNT(*) AS count FROM workflow_nodes WHERE workflow_id=?", (workflow_id,)).fetchone()["count"]
+        conn.execute(
+            """
+            INSERT INTO workflow_runs(run_id, workflow_id, status, duration_ms, started_at)
+            VALUES (?, ?, 'success', 0, datetime('now'))
+            """,
+            (run_id, workflow_id),
+        )
+        conn.execute(
+            """
+            UPDATE workflows
+            SET runs_total=runs_total + 1, success_rate=100, status='active', updated_at=datetime('now')
+            WHERE workflow_id=?
+            """,
+            (workflow_id,),
+        )
+        conn.commit()
+    _audit(actor, "workflow.run", "workflow", workflow_id, {"run_id": run_id, "nodes": node_count, "metadata": payload.metadata})
+    return {"status": "ok", "workflow_id": workflow_id, "run_id": run_id, "run_status": "success", "nodes": node_count}
 
 
 class TaskCreateInput(BaseModel):

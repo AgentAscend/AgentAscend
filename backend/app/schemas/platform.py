@@ -42,6 +42,16 @@ class AgentRecord(BaseModel):
     status: Literal["active", "idle", "paused", "error"]
     tasks_completed: int = 0
     success_rate: float = 0.0
+    instructions: str | None = None
+    tools: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    autonomy_level: str = "manual"
+    visibility: str = "private"
+    deployment_environment: str = "production"
+    monetization: str = "private"
+    workflow_id: str | None = None
+    deployment_id: str | None = None
+    marketplace_listing_id: str | None = None
     created_at: str
     updated_at: str
 
