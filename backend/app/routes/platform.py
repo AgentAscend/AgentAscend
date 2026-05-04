@@ -17,6 +17,9 @@ from backend.app.schemas.platform import (
     AgentRecord,
     AvatarUpdateRequest,
     AvatarUpdateResponse,
+    CommandCenterOutputRecord,
+    CommandCenterResponse,
+    CommandCenterWorkflowRunRecord,
     CommunityPost,
     CommunityResponse,
     CreatorPayoutTotalsResponse,
@@ -201,6 +204,132 @@ def dashboard_overview():
     recent_activity = [DashboardActivity(source=row["source"], action=row["action"], occurred_at=row["occurred_at"]) for row in activity_rows]
 
     return {"status": "ok", "stats": stats, "active_agents": active_agents, "recent_activity": recent_activity}
+
+
+def _counts_by_status(rows) -> dict[str, int]:
+    return {str(row["status"]): int(row["count"] or 0) for row in rows}
+
+
+@router.get("/dashboard/command-center", response_model=CommandCenterResponse)
+def dashboard_command_center(authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
+    with get_connection() as conn:
+        agent_status_rows = conn.execute(
+            """
+            SELECT status, COUNT(*) AS count
+            FROM agents
+            WHERE owner_user_id=?
+            GROUP BY status
+            """,
+            (actor,),
+        ).fetchall()
+
+        deployment_status_rows = conn.execute(
+            """
+            SELECT d.status, COUNT(*) AS count
+            FROM deployments d
+            JOIN agents a ON a.deployment_id=d.deployment_id
+            WHERE a.owner_user_id=?
+            GROUP BY d.status
+            """,
+            (actor,),
+        ).fetchall()
+        deployment_environment_rows = conn.execute(
+            """
+            SELECT d.environment AS status, COUNT(*) AS count
+            FROM deployments d
+            JOIN agents a ON a.deployment_id=d.deployment_id
+            WHERE a.owner_user_id=?
+            GROUP BY d.environment
+            """,
+            (actor,),
+        ).fetchall()
+
+        task_status_rows = conn.execute(
+            """
+            SELECT status, COUNT(*) AS count
+            FROM tasks
+            WHERE user_id=?
+            GROUP BY status
+            """,
+            (actor,),
+        ).fetchall()
+
+        output_total = conn.execute("SELECT COUNT(*) AS count FROM outputs WHERE user_id=?", (actor,)).fetchone()
+        output_rows = conn.execute(
+            """
+            SELECT output_id, task_id, user_id, title, output_type, size_bytes, download_url, created_at
+            FROM outputs
+            WHERE user_id=?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 10
+            """,
+            (actor,),
+        ).fetchall()
+
+        recent_execution_rows = conn.execute(
+            """
+            SELECT execution_id, source_type, source_id, user_id, agent_id, status, started_at, finished_at, metadata_json,
+                   0 AS event_count, 0 AS artifact_count
+            FROM executions
+            WHERE user_id=?
+            ORDER BY started_at DESC, id DESC
+            LIMIT 10
+            """,
+            (actor,),
+        ).fetchall()
+        recent_failure_rows = conn.execute(
+            """
+            SELECT execution_id, source_type, source_id, user_id, agent_id, status, started_at, finished_at, metadata_json,
+                   0 AS event_count, 0 AS artifact_count
+            FROM executions
+            WHERE user_id=? AND status='failed'
+            ORDER BY started_at DESC, id DESC
+            LIMIT 10
+            """,
+            (actor,),
+        ).fetchall()
+
+        workflow_status_rows = conn.execute(
+            """
+            SELECT w.status, COUNT(*) AS count
+            FROM workflows w
+            JOIN audit_events ae ON ae.target_type='workflow'
+                 AND ae.target_id=w.workflow_id
+                 AND ae.event_type='workflow.create'
+                 AND ae.actor_user_id=?
+            GROUP BY w.status
+            """,
+            (actor,),
+        ).fetchall()
+        workflow_run_rows = conn.execute(
+            """
+            SELECT wr.run_id, wr.workflow_id, wr.status, wr.duration_ms, wr.started_at
+            FROM workflow_runs wr
+            JOIN audit_events ae ON ae.target_type='workflow'
+                 AND ae.target_id=wr.workflow_id
+                 AND ae.event_type='workflow.create'
+                 AND ae.actor_user_id=?
+            ORDER BY wr.started_at DESC, wr.id DESC
+            LIMIT 10
+            """,
+            (actor,),
+        ).fetchall()
+
+    return {
+        "status": "ok",
+        "agent_counts_by_status": _counts_by_status(agent_status_rows),
+        "deployment_counts_by_status": _counts_by_status(deployment_status_rows),
+        "deployment_counts_by_environment": _counts_by_status(deployment_environment_rows),
+        "task_counts_by_status": _counts_by_status(task_status_rows),
+        "output_count": int(output_total["count"] or 0),
+        "recent_outputs": [CommandCenterOutputRecord(**_row_dict(row)) for row in output_rows],
+        "execution_summary": _execution_summary_for_user(actor),
+        "recent_executions": [_execution_record_payload(_row_dict(row)) for row in recent_execution_rows],
+        "recent_failures": [_execution_record_payload(_row_dict(row)) for row in recent_failure_rows],
+        "workflow_counts_by_status": _counts_by_status(workflow_status_rows),
+        "recent_workflow_runs": [CommandCenterWorkflowRunRecord(**_row_dict(row)) for row in workflow_run_rows],
+    }
 
 
 @router.get("/agents", response_model=AgentListResponse)

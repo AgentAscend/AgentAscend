@@ -34,6 +34,40 @@ class DashboardOverviewResponse(BaseModel):
     recent_activity: list[DashboardActivity]
 
 
+class CommandCenterOutputRecord(BaseModel):
+    output_id: str
+    task_id: str | None = None
+    user_id: str | None = None
+    title: str
+    output_type: str
+    size_bytes: int = 0
+    download_url: str
+    created_at: str
+
+
+class CommandCenterWorkflowRunRecord(BaseModel):
+    run_id: str
+    workflow_id: str
+    status: str
+    duration_ms: int = 0
+    started_at: str
+
+
+class CommandCenterResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    agent_counts_by_status: dict[str, int] = Field(default_factory=dict)
+    deployment_counts_by_status: dict[str, int] = Field(default_factory=dict)
+    deployment_counts_by_environment: dict[str, int] = Field(default_factory=dict)
+    task_counts_by_status: dict[str, int] = Field(default_factory=dict)
+    output_count: int = 0
+    recent_outputs: list[CommandCenterOutputRecord] = Field(default_factory=list)
+    execution_summary: "ExecutionSummaryResponse"
+    recent_executions: list["ExecutionRecord"] = Field(default_factory=list)
+    recent_failures: list["ExecutionRecord"] = Field(default_factory=list)
+    workflow_counts_by_status: dict[str, int] = Field(default_factory=dict)
+    recent_workflow_runs: list[CommandCenterWorkflowRunRecord] = Field(default_factory=list)
+
+
 class AgentRecord(BaseModel):
     agent_id: str
     name: str
