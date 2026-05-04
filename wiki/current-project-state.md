@@ -18,7 +18,7 @@ AgentAscend is in a soft-launch/product-integration posture. Payment/access hard
 - Knowledge system: `MEMORY.md`, `raw/`, `wiki/`, `docs/`, `learning/`, `skills/`.
 
 ## Current production status — verified 2026-05-04
-- Production commit: `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa`.
+- Production backend-feature baseline: `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa`; later docs-only cleanup commits may redeploy without changing OpenAPI/backend behavior. Verify Railway before acting.
 - Web deployment: SUCCESS (`1bd2d398-fd7e-4916-80ce-a6c90f5c6010`).
 - Scheduler deployment: SUCCESS (`51f5f065-2e74-4824-b607-2477c5c7241e`).
 - `/health`: HTTP 200.

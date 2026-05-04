@@ -5,7 +5,7 @@ AgentAscend is a crypto-native AI agent platform and marketplace. The backend is
 
 ## Verified production baseline
 - Git branch: `main`.
-- Local HEAD and `origin/main`: `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa` (`backend: add owner scoped deployment events`).
+- Backend-feature baseline: `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa` (`backend: add owner scoped deployment events`). Latest Railway commit can be a docs-only cleanup commit; verify before acting.
 - Ahead/behind: `0 / 0` at cleanup start.
 - Railway `AgentAscend`: SUCCESS at `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa` (deployment `1bd2d398-fd7e-4916-80ce-a6c90f5c6010`).
 - Railway `AgentAscend-Scheduler`: SUCCESS at `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa` (deployment `51f5f065-2e74-4824-b607-2477c5c7241e`).

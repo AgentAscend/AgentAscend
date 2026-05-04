@@ -14,7 +14,7 @@ related:
 Related: [[current-project-state|Current Project State]], [[Launch Readiness]], [[frontend-v0-workflow|Frontend v0 Workflow]], [[Pump.fun Tokenized Agent Payments]], [[scheduler|Scheduler]]
 
 ## Current production state
-- Git/local/origin: `main` at `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa`, ahead/behind `0 / 0` at cleanup baseline.
+- Git/local/origin cleanup baseline: `main` at backend-feature commit `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa`, ahead/behind `0 / 0`; docs-only cleanup commit was created afterward.
 - Railway web: SUCCESS at `26aa8ab`.
 - Railway scheduler: SUCCESS at `26aa8ab`.
 - Live API: `/health` HTTP 200; `/openapi.json` HTTP 200 valid JSON; HSTS/security headers present.
