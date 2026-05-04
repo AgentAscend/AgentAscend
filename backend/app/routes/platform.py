@@ -29,6 +29,8 @@ from backend.app.schemas.platform import (
     DashboardStat,
     DeploymentActionRequest,
     DeploymentActionResponse,
+    DeploymentEventListResponse,
+    DeploymentEventRecord,
     DeploymentListResponse,
     DeploymentRecord,
     EntitlementRecord,
@@ -1577,6 +1579,126 @@ def create_deployment(payload: DeploymentCrudInput, authorization: str | None = 
         conn.commit()
     _audit(actor, "deployment.create", "deployment", deployment_id, {"environment": payload.environment})
     return {"status": "ok", "deployment_id": deployment_id}
+
+
+def _deployment_owner_user_id(conn, deployment_id: str) -> str | None:
+    row = conn.execute(
+        """
+        SELECT COALESCE(
+            (
+                SELECT a.owner_user_id
+                FROM agents a
+                WHERE a.deployment_id=? AND a.owner_user_id IS NOT NULL
+                ORDER BY a.updated_at DESC, a.id DESC
+                LIMIT 1
+            ),
+            (
+                SELECT ae.actor_user_id
+                FROM audit_events ae
+                WHERE ae.target_type='deployment'
+                  AND ae.target_id=?
+                ORDER BY ae.created_at ASC, ae.id ASC
+                LIMIT 1
+            )
+        ) AS owner_user_id
+        """,
+        (deployment_id, deployment_id),
+    ).fetchone()
+    if row and row["owner_user_id"]:
+        return row["owner_user_id"]
+
+    rows = conn.execute(
+        """
+        SELECT actor_user_id, metadata_json
+        FROM audit_events
+        WHERE target_type='agent' AND event_type='agent.deploy'
+        ORDER BY created_at ASC, id ASC
+        """
+    ).fetchall()
+    for audit_row in rows:
+        try:
+            metadata = json.loads(audit_row["metadata_json"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            metadata = {}
+        if metadata.get("deployment_id") == deployment_id:
+            return audit_row["actor_user_id"]
+    return None
+
+
+def _require_deployment_owner(conn, deployment_id: str, actor_user_id: str) -> None:
+    exists = conn.execute("SELECT 1 FROM deployments WHERE deployment_id=?", (deployment_id,)).fetchone()
+    if not exists:
+        fail(404, "not_found", "Deployment not found")
+    owner_user_id = _deployment_owner_user_id(conn, deployment_id)
+    if owner_user_id != actor_user_id:
+        fail(403, "forbidden", "Deployment does not belong to authenticated user")
+
+
+def _deployment_event_message(event_type: str, deployment_id: str) -> str:
+    if event_type == "agent.deploy":
+        return f"Deployment {deployment_id} created from agent deploy"
+    if event_type == "deployment.create":
+        return f"Deployment {deployment_id} created"
+    if event_type.startswith("deployment."):
+        action = event_type.split(".", 1)[1].replace("_", " ")
+        return f"Deployment {deployment_id} {action}"
+    return f"Deployment {deployment_id} event recorded"
+
+
+def _deployment_event_status(event_type: str, deployment_status: str) -> str:
+    if event_type == "agent.deploy":
+        return deployment_status
+    if event_type == "deployment.create":
+        return "created"
+    if event_type.startswith("deployment."):
+        return event_type.split(".", 1)[1]
+    return deployment_status
+
+
+@router.get("/deployments/{deployment_id}/events", response_model=DeploymentEventListResponse)
+def deployment_events(deployment_id: str, authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
+    events: list[DeploymentEventRecord] = []
+    with get_connection() as conn:
+        _require_deployment_owner(conn, deployment_id, actor)
+        deployment = conn.execute("SELECT status FROM deployments WHERE deployment_id=?", (deployment_id,)).fetchone()
+        deployment_status = deployment["status"] if deployment else "unknown"
+        rows = conn.execute(
+            """
+            SELECT event_id, actor_user_id, event_type, target_type, target_id, metadata_json, created_at
+            FROM audit_events
+            WHERE actor_user_id=?
+              AND (
+                (target_type='deployment' AND target_id=?)
+                OR (target_type='agent' AND event_type='agent.deploy')
+              )
+            ORDER BY created_at DESC, id DESC
+            LIMIT 100
+            """,
+            (actor, deployment_id),
+        ).fetchall()
+
+    for row in rows:
+        try:
+            metadata = json.loads(row["metadata_json"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            metadata = {}
+        if row["target_type"] == "agent" and metadata.get("deployment_id") != deployment_id:
+            continue
+        event_type = str(row["event_type"])
+        events.append(
+            DeploymentEventRecord(
+                event_id=row["event_id"],
+                deployment_id=deployment_id,
+                timestamp=row["created_at"],
+                level="info",
+                status=_deployment_event_status(event_type, deployment_status),
+                message=_deployment_event_message(event_type, deployment_id),
+                source=event_type,
+            )
+        )
+
+    return {"status": "ok", "deployment_id": deployment_id, "events": events}
 
 
 @router.get("/deployments/{deployment_id}")

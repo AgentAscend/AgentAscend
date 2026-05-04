@@ -132,6 +132,22 @@ class DeploymentActionResponse(BaseModel):
     deployment: DeploymentRecord
 
 
+class DeploymentEventRecord(BaseModel):
+    event_id: str
+    deployment_id: str
+    timestamp: str
+    level: str
+    status: str
+    message: str
+    source: str
+
+
+class DeploymentEventListResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    deployment_id: str
+    events: list[DeploymentEventRecord]
+
+
 class WorkflowRecord(BaseModel):
     workflow_id: str
     name: str
