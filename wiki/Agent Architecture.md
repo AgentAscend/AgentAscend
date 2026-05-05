@@ -9,29 +9,29 @@ aliases:
 # Agent Architecture
 
 ## Summary
-Agent Architecture covers Hermes as project operator, Ascend Forge as product/runtime surface, and future specialized agents.
+Agent Architecture defines the safe Hermes/AgentAscend multi-agent operating model: specialized agents may audit, draft, test, and implement bounded slices, but production-impacting actions stay owner-gated.
 
-## Current status
-- Ascend Forge backend foundations are live: capabilities/templates, full agent definitions, run/deploy/workflow bridges, Command Center, and deployment events.
-- Full autonomous multi-agent marketplace/runtime execution is not yet the current focus.
-- Specialized agent setup should wait until v0 frontend/backend contracts are clearer.
-
-## Future agent roles
-- Payment/Access Agent: audits payment/access contracts only; no production mutation without approval.
-- Frontend/v0 Agent: patch prompts and frontend parity gates.
-- Ledger/Scheduler Agent: execution/scheduler report-first checks; no scheduler changes without approval.
-- QA/Security Agent: release gates, secret scans, security regressions.
-- Docs/Memory Agent: wiki/raw/skills hygiene only.
-- Release/Ops Agent: deploy readiness reports and live verification.
-- Marketplace/Product Agent: listing/install/creator contract analysis.
+## Components
+- Release/Ops Agent: Railway/Vercel readiness, deploy monitoring, logs, rollback plans.
+- Backend Forge Agent: agents, workflows, tasks, outputs, runtime endpoints, backend tests.
+- Frontend/v0 Agent: v0 prompts, frontend audits, contract checks.
+- Payment/Access Agent: Pump.fun, payment verification, access_grants, entitlements, replay checks.
+- Scheduler/Automation Agent: cronjobs, task worker, job safety, report-only automation.
+- Docs/Memory Agent: MEMORY.md, wiki, raw notes, Obsidian hygiene, skills.
+- QA/Security Agent: tests, secret scans, auth checks, release gates.
+- Marketing/Community Agent: drafts only; no auto-posting.
 
 ## Relationships
 - [[AgentAscend]]
+- [[Hermes]]
+- [[Cronjobs]]
+- [[Ops Runbook]]
 - [[Execution Ledger]]
-- [[scheduler|Scheduler]]
 - [[frontend-v0-workflow|Frontend v0 Workflow]]
-- [[Roadmap]]
-- [[current-project-state|Current Project State]]
+- [[Payment Access Control]]
 
-## Next actions
-Do not create autonomous agents yet. First complete frontend/product polish against live backend truth and define exact allowed/forbidden scopes per agent role.
+## Notes
+The default autonomy level is report-only. Use `delegate_task` for short isolated reviews and full Hermes subprocesses only for bounded longer missions with explicit file ownership. Every agent must stop before push, deploy, DB mutation, scheduler state change, payment action, or external message unless the owner explicitly approves that action.
+
+
+Swarm activation status: local manifest/report-only first. The local docs commit `99f811a` sits on top of backend runtime-worker commit `6aac0e3`; do not treat a normal push as docs-only unless commits are split with explicit owner approval.

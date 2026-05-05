@@ -9,31 +9,24 @@ aliases:
 # Hermes
 
 ## Summary
-Hermes is the structured AgentAscend operator for reasoning, tool use, documentation, audits, and safe implementation support.
+Hermes is the structured AgentAscend operator for reasoning, tool use, docs, audits, implementation support, cron delivery, and subagent orchestration.
 
-## Key Current Status
-Hermes should maintain clean raw/wiki/system/learning/skills boundaries, keep work report-first for risky areas, and escalate payment/security/tokenomics decisions.
+## Components
+- Skills: reusable procedures for AgentAscend audits, implementation slices, and platform operations.
+- Memory: compact durable facts and current operating constraints.
+- Cronjobs: report-only recurring Hermes jobs that can deliver through the Hermes gateway.
+- Delegation: short-lived subagents for research, review, and isolated workstreams.
+- Gateway: messaging layer for Telegram and other platforms; separate from AgentAscend production scheduler Telegram status job.
 
-## Important Links
+## Relationships
 - [[AgentAscend]]
 - [[Agent Architecture]]
+- [[Cronjobs]]
 - [[Ops Runbook]]
-- [[Knowledge System]]
-- [[System Rules]]
+- [[current-project-state|Current Project State]]
 
-## Recent Evidence
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-24-2332]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0000]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0401]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0728]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0731]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0800]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0806]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-1200]]
-- [[raw/hermes-runtime-audits/2026-04-27|2026-04-27 Hermes Runtime Audit]].
-- [[raw/2026-04-25-overnight-report|2026-04-25 Overnight Report]].
+## Notes
+Hermes must preserve raw/wiki/system/learning/skills boundaries. It may propose automation, docs, and safe implementation slices, but must not perform production mutation, payments, scheduler state changes, or external messaging without explicit approval. Recent Telegram audit distinguishes Hermes cron Telegram delivery from the AgentAscend scheduler `default-telegram-status-summary` job.
 
-## Open Questions / Next Steps
-- Continue converting raw dated evidence into connected evergreen wiki pages.
-- Preserve secret-safe operating rules.
-- Use skills for reusable workflows.
+
+Hermes swarm activation is currently local/report-only: `docs/hermes-swarm-manifest.md`, `docs/hermes-swarm-cycle-001.md`, and `docs/hermes-swarm-cadence.md` define lanes and maturity levels. Current cron failure evidence points to stale Hermes cron execution/import state (`cfg_get`) before Telegram delivery, while the gateway is currently running.

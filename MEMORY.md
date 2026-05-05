@@ -41,7 +41,7 @@ Interpretation: Forge capability registry/templates, runtime bridge routes, full
 - Node helper dev-only cleanup is complete: Vitest updated to 3.2.4.
 - Runtime dependency audit still has remaining Pump.fun/Solana-chain advisories. They are accepted/monitored for now; do not run `npm audit fix` blindly.
 
-## Scheduler state
+## Scheduler and automation state
 Enabled/audited production jobs:
 - `default-backend-health-check`
 - `default-integration-drift-check`
@@ -56,6 +56,10 @@ Disabled/held jobs:
 - `default-telegram-status-summary`: report-only by default; no-send canary passed; outbound Telegram sends need separate owner approval.
 - `default-roadmap-review`: placeholder/report-first; no model call; no file mutation; canary passed; enable only with owner approval.
 - `default-git-status-summary`: fails closed safely when git is unavailable; production currently lacks git; keep disabled unless owner accepts sanitized unavailable reports.
+
+Telegram recovery audit 2026-05-04 / Hermes cron no-send recovery audit: AgentAscend scheduler Telegram sends are intentionally off by default and production Telegram env/credential variables were missing by name-only inspection. Hermes cronjobs are a separate layer; nine Hermes cronjobs still target Telegram delivery, but recent runs mostly show execution errors before delivery. Keep AgentAscend scheduler Telegram disabled/report-only unless owner approves env setup and a one-message no-secret canary. Prefer recovering owner-facing Telegram reports through Hermes cron/gateway after fixing cron execution reliability.
+
+Hermes multi-agent automation policy: use specialized report-first agents for Release/Ops, Backend Forge, Frontend/v0, Payment/Access, Scheduler/Automation, Docs/Memory, QA/Security, and Marketing/Community. Every agent must verify current state, use bounded smallest-safe slices, and stop before push, deploy, DB mutation, scheduler state changes, payment actions, access/entitlement changes, or external messages unless explicitly approved. Local swarm operating docs exist in commit `99f811a` on top of runtime-worker commit `6aac0e3`; neither is pushed as long as origin/main remains `1bb536a`. Pushing main would push both unless the owner approves a split/cherry-pick or first resolves runtime-worker queued/running task risk.
 
 Do not change scheduler jobs, run `/jobs/run-due`, or run payment/scheduler canaries without explicit approval.
 

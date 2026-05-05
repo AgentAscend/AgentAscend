@@ -56,3 +56,6 @@ AgentAscend is in a soft-launch/product-integration posture. Payment/access hard
 2. Remove or gate placeholder/localStorage-authoritative frontend behavior.
 3. Add remaining backend slices only one at a time when live frontend contracts require them.
 4. Defer multi-agent role setup until product contracts stabilize.
+
+
+Swarm/current git note: local main may be ahead of origin by `6aac0e3` runtime-worker and `99f811a` swarm docs. Swarm docs are usable locally/report-only, but pushing main would include runtime-worker unless the owner approves a split or queued/running task risk check.

@@ -9,32 +9,27 @@ aliases:
 # Ops Runbook
 
 ## Summary
-The Ops Runbook is the hub for safe production checks, launch-readiness gates, scheduler boundaries, docs maintenance, and owner-approval prompts.
+The Ops Runbook is the hub for safe production checks, release gates, scheduler boundaries, Telegram recovery, docs maintenance, and owner approval prompts.
 
-## Key Current Status
-Current safe ops posture: public health/OpenAPI/security checks are allowed; admin aggregate audits are read-only and sanitized; payments, migrations, scheduler changes, env changes, and deploy actions require explicit approval.
+## Components
+- Pre-push readiness: exact git scope, tests, OpenAPI, live preflight, no push without approval.
+- Post-deploy verification: Railway web/scheduler status, `/health`, `/openapi.json`, route/auth/security checks.
+- Scheduler safety: no enable/disable/run jobs or `/jobs/run-due` without approval.
+- Payment safety: no Pump.fun verify, payment intent, wallet signing, access_grant, entitlement, revenue claim, or buyback action without approval.
+- Telegram recovery: diagnose Hermes cron and AgentAscend scheduler Telegram layers separately; no send canary without approval.
+- Automation governance: report-only by default, bounded phases, explicit stop conditions.
 
-## Important Links
+## Relationships
 - [[Launch Readiness]]
 - [[Payment Access Control]]
 - [[scheduler|Scheduler]]
 - [[Cronjobs]]
+- [[Hermes]]
+- [[Agent Architecture]]
 - [[known-issues|Known Issues]]
-- [[Deployment]]
 
-## Recent Evidence
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-24-2332]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0000]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0401]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0728]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0731]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0800]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-0806]]
-- 2026-05-01: Linked evidence [[raw/backend-health/2026-04-25-1200]]
-- [[raw/deploy-readiness/2026-04-29-payment-critical-env-vars|2026-04-29 Payment Critical Env Vars]].
-- [[raw/post-deploy-audits/2026-04-27-marketplace-live-stability|2026-04-27 Post-deploy Audit]].
+## Notes
+Safe checks include public health/OpenAPI/security headers, Railway deployment status, and sanitized aggregate logs. Unsafe actions include DB mutation, migrations, scheduler state changes, env changes, deploys, payments, external messages, and public posts. Use docs/automation-governance.md and docs/telegram-notification-runbook.md for current operating details.
 
-## Open Questions / Next Steps
-- Keep preflight checks read-only unless owner approves a specific mutation.
-- Use owner approval sentence before replay-index migration DDL.
-- Keep secrets out of reports and docs.
+
+Pending-commit rule: when local main is ahead by runtime-worker plus swarm-doc commits, either verify aggregate production queued/running/pending_approval task counts before pushing both, or explicitly split docs-only work on a clean branch. Do not push automatically.

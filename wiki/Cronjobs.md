@@ -9,26 +9,23 @@ aliases:
 # Cronjobs
 
 ## Summary
-Cronjobs and scheduler jobs should be report-first operating loops. They create summaries/findings and must not mutate payments, access, production DB, scheduler flags, or deployments without explicit owner approval.
+Cronjobs are recurring operating loops for AgentAscend. They must be report-first by default and must not mutate production systems, scheduler state, payments, access, or external messaging without explicit approval.
 
-## Current status
-The production scheduler has eight enabled/audited jobs and three disabled/held jobs. See [[scheduler|Scheduler]] for the current job matrix.
-
-## Safety posture
-- Enabled payment-adjacent jobs are report/aggregate-oriented.
-- Telegram status summary does not send externally by default.
-- Roadmap review is placeholder/report-first and does not mutate files.
-- Git status summary fails closed when git is unavailable.
-- Do not call `/jobs/run-due` during docs or audit cleanup.
-
-## Recent Evidence
-- [[raw/scheduler-runtime-audits/2026-05-02-final-scheduler-posture|2026-05-02 final scheduler posture]]
-- [[raw/scheduler-runtime-audits/2026-05-02-task-worker-enablement|2026-05-02 task worker enablement canary]]
-- [[raw/cronjob-audits/2026-04-27T11-20-17Z|2026-04-27 cronjob audit]]
+## Components
+- Hermes cronjobs: managed by Hermes; can deliver reports through the Hermes gateway. Current audit found nine scheduled Hermes cronjobs with Telegram delivery targets, but most recent runs show error status before delivery.
+- AgentAscend DB scheduler jobs: production jobs stored in scheduler tables and run by the AgentAscend-Scheduler service.
+- Telegram status summary: `default-telegram-status-summary`; report-only by default and held unless owner approves enablement/sends.
+- Task queue worker: enabled/audited production scheduler job that can process queued tasks.
 
 ## Relationships
 - [[scheduler|Scheduler]]
-- [[Execution Ledger]]
-- [[Ops Runbook]]
 - [[Hermes]]
-- [[Roadmap]]
+- [[Ops Runbook]]
+- [[Agent Architecture]]
+- [[Execution Ledger]]
+
+## Notes
+Telegram stopped for two distinct reasons depending on layer: AgentAscend scheduler Telegram sends are intentionally disabled/report-only with missing send env vars, while Hermes cronjobs currently appear to be failing during job execution/provider/network handling before final Telegram delivery. Do not call `/jobs/run-due`, run scheduler jobs, or send Telegram messages during diagnosis.
+
+
+Hermes cron recovery note: nine Hermes cronjobs target Telegram delivery, but recent errors show `cannot import name cfg_get from hermes_cli.config` and no delivery error, so diagnose Hermes execution/import state before testing Telegram delivery. Do not run jobs or send canaries without owner approval.
