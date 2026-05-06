@@ -283,7 +283,7 @@ class TaskRecord(BaseModel):
     agent_id: str | None = None
     type: str = "general"
     title: str
-    status: Literal["queued", "running", "completed", "failed"]
+    status: Literal["queued", "running", "pending_approval", "completed", "failed"]
     priority: Literal["low", "medium", "high"]
     assigned_to: str | None = None
     error_message: str | None = None

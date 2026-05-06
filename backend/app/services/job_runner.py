@@ -507,7 +507,217 @@ def _append_scheduler_ledger_finish(
         return
 
 
-def _execute_user_task(task: dict[str, Any]) -> str:
+AGENT_RUNTIME_TOOL_REGISTRY = {
+    "web_search": {"name": "Web Search", "risk_level": "low", "requires_approval": False},
+    "summarizer": {"name": "Summarizer", "risk_level": "low", "requires_approval": False},
+    "workflow_runner": {"name": "Workflow Runner", "risk_level": "medium", "requires_approval": True},
+    "content_drafter": {"name": "Content Drafter", "risk_level": "low", "requires_approval": False},
+}
+
+AGENT_RUNTIME_SKILL_REGISTRY = {
+    "research": {"name": "Research", "output_schema": "structured_findings"},
+    "reporting": {"name": "Reporting", "output_schema": "report"},
+    "workflow_orchestration": {"name": "Workflow Orchestration", "output_schema": "workflow_run_plan"},
+    "content_generation": {"name": "Content Generation", "output_schema": "draft_content"},
+    "seo_planning": {"name": "SEO Planning", "output_schema": "seo_brief"},
+}
+
+
+def _json_list(value: Any) -> list[str]:
+    try:
+        parsed = json.loads(value or "[]")
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item).strip() for item in parsed if str(item).strip()]
+
+
+def _agent_for_task(conn: Any, task: dict[str, Any]) -> dict[str, Any] | None:
+    agent_id = task.get("agent_id") or task.get("assigned_to")
+    if not agent_id:
+        return None
+    row = conn.execute(
+        """
+        SELECT agent_id, owner_user_id, name, category, description, instructions, tools_json, skills_json,
+               autonomy_level, workflow_id, deployment_id, marketplace_listing_id
+        FROM agents
+        WHERE agent_id=?
+        """,
+        (agent_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    agent = dict(row)
+    agent["tools"] = _json_list(agent.pop("tools_json", None))
+    agent["skills"] = _json_list(agent.pop("skills_json", None))
+    return agent
+
+
+def _runtime_requires_approval(agent: dict[str, Any], tool_id: str) -> bool:
+    tool = AGENT_RUNTIME_TOOL_REGISTRY.get(tool_id, {})
+    autonomy = str(agent.get("autonomy_level") or "manual").strip().lower()
+    return bool(tool.get("requires_approval")) or autonomy in {"manual", "level_0"} and tool.get("risk_level") in {"medium", "high"}
+
+
+def _execute_runtime_tool(tool_id: str, task: dict[str, Any], agent: dict[str, Any]) -> str:
+    title = str(task.get("title") or "Untitled task").strip()
+    agent_name = str(agent.get("name") or agent.get("agent_id") or "Agent").strip()
+    instructions = str(agent.get("instructions") or agent.get("description") or "").strip()
+    if tool_id == "web_search":
+        return f"Web Search gathered backend-safe research notes for '{title}' using agent '{agent_name}'."
+    if tool_id == "summarizer":
+        return f"Summarizer produced a concise synthesis for '{title}' from available runtime context."
+    if tool_id == "content_drafter":
+        return f"Content Drafter created a reviewable draft for '{title}' guided by: {instructions[:160]}"
+    if tool_id == "workflow_runner":
+        return f"Workflow Runner prepared workflow execution context for '{title}'."
+    raise RuntimeError(f"Unsupported runtime tool: {tool_id}")
+
+
+def _execute_runtime_skill(skill_id: str, task: dict[str, Any], agent: dict[str, Any], tool_results: list[str]) -> str:
+    title = str(task.get("title") or "Untitled task").strip()
+    skill = AGENT_RUNTIME_SKILL_REGISTRY.get(skill_id)
+    if not skill:
+        raise RuntimeError(f"Unsupported runtime skill: {skill_id}")
+    return f"{skill['name']} skill generated {skill['output_schema']} for '{title}' using {len(tool_results)} tool result(s)."
+
+
+def _create_and_complete_step(execution_id: str, order: int, step_type: str, name: str, metadata: dict[str, Any]) -> dict[str, Any]:
+    step = execution_ledger.create_execution_step(execution_id, order, step_type, name, status="pending", metadata=metadata)
+    execution_ledger.mark_execution_step_running(step["step_id"])
+    return execution_ledger.mark_execution_step_completed(step["step_id"])
+
+
+def _mark_execution_pending_approval(conn: Any, execution_id: str) -> None:
+    conn.execute("UPDATE executions SET status='pending_approval', finished_at=NULL WHERE execution_id=?", (execution_id,))
+
+
+def _execute_agent_runtime_task(task: dict[str, Any]) -> dict[str, Any]:
+    task_id = task["task_id"]
+    with get_connection() as conn:
+        agent = _agent_for_task(conn, task)
+        execution = _execution_for_task(conn, task_id)
+    if agent is None or execution is None or not execution_ledger.is_execution_ledger_enabled():
+        return {"status": "fallback", "content": _execute_legacy_user_task(task)}
+
+    execution_id = execution["execution_id"]
+    execution_ledger.append_execution_event(
+        execution_id=execution_id,
+        event_type="agent_runtime_started",
+        payload={"task_id": task_id, "agent_id": agent["agent_id"], "tool_count": len(agent["tools"]), "skill_count": len(agent["skills"]), "timestamp": utc_now_iso()},
+    )
+    _create_and_complete_step(
+        execution_id,
+        1,
+        "plan",
+        "Plan agent runtime steps",
+        {"task_id": task_id, "agent_id": agent["agent_id"], "tools": agent["tools"], "skills": agent["skills"]},
+    )
+
+    tool_results: list[str] = []
+    step_order = 2
+    for tool_id in agent["tools"]:
+        if tool_id not in AGENT_RUNTIME_TOOL_REGISTRY:
+            raise RuntimeError(f"Unsupported runtime tool: {tool_id}")
+        if _runtime_requires_approval(agent, tool_id):
+            step = execution_ledger.create_execution_step(
+                execution_id,
+                step_order,
+                "approval_gate",
+                f"Approval required for {tool_id}",
+                status="pending_approval",
+                metadata={"task_id": task_id, "agent_id": agent["agent_id"], "tool_id": tool_id, "risk_level": AGENT_RUNTIME_TOOL_REGISTRY[tool_id]["risk_level"]},
+            )
+            approval = execution_ledger.request_execution_approval(
+                execution_id=execution_id,
+                step_id=step["step_id"],
+                approval_type="tool_execution",
+                status="pending",
+                requested_by="agent_runtime_worker",
+                reason=f"{tool_id} requires approval before execution",
+                metadata={"task_id": task_id, "agent_id": agent["agent_id"], "tool_id": tool_id},
+            )
+            execution_ledger.append_execution_event(
+                execution_id=execution_id,
+                event_type="agent_approval_required",
+                level="warning",
+                message=f"{tool_id} requires approval before execution",
+                step_id=step["step_id"],
+                payload={"task_id": task_id, "agent_id": agent["agent_id"], "tool_id": tool_id, "approval_id": approval["approval_id"]},
+            )
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE tasks SET status='pending_approval', error_message=?, updated_at=datetime('now') WHERE task_id=?",
+                    (f"{tool_id} requires approval before execution", task_id),
+                )
+                conn.execute(
+                    "INSERT INTO task_logs(task_id, level, message, created_at) VALUES (?, 'warning', ?, datetime('now'))",
+                    (task_id, f"Approval required: {tool_id} requires approval before execution"),
+                )
+                _mark_execution_pending_approval(conn, execution_id)
+                conn.commit()
+            return {"status": "pending_approval", "approval_required": 1, "output_created": False}
+        result = _execute_runtime_tool(tool_id, task, agent)
+        step = _create_and_complete_step(
+            execution_id,
+            step_order,
+            "tool",
+            f"Execute tool: {tool_id}",
+            {"task_id": task_id, "agent_id": agent["agent_id"], "tool_id": tool_id, "risk_level": AGENT_RUNTIME_TOOL_REGISTRY[tool_id]["risk_level"]},
+        )
+        execution_ledger.append_execution_event(
+            execution_id=execution_id,
+            event_type="agent_tool_executed",
+            step_id=step["step_id"],
+            payload={"task_id": task_id, "agent_id": agent["agent_id"], "tool_id": tool_id, "result_length": len(result)},
+        )
+        tool_results.append(result)
+        step_order += 1
+
+    skill_results: list[str] = []
+    for skill_id in agent["skills"]:
+        result = _execute_runtime_skill(skill_id, task, agent, tool_results)
+        step = _create_and_complete_step(
+            execution_id,
+            step_order,
+            "skill",
+            f"Execute skill: {skill_id}",
+            {"task_id": task_id, "agent_id": agent["agent_id"], "skill_id": skill_id, "output_schema": AGENT_RUNTIME_SKILL_REGISTRY[skill_id]["output_schema"]},
+        )
+        execution_ledger.append_execution_event(
+            execution_id=execution_id,
+            event_type="agent_skill_executed",
+            step_id=step["step_id"],
+            payload={"task_id": task_id, "agent_id": agent["agent_id"], "skill_id": skill_id, "result_length": len(result)},
+        )
+        skill_results.append(result)
+        step_order += 1
+
+    content = "\n".join(
+        [
+            f"Agent runtime completed: {task.get('title') or task_id}",
+            f"Agent: {agent['name']} ({agent['agent_id']})",
+            f"Category: {agent.get('category') or 'uncategorized'}",
+            f"Instructions: {agent.get('instructions') or agent.get('description') or 'No instructions provided'}",
+            "Tool results:",
+            *(f"- {item}" for item in tool_results),
+            "Skill results:",
+            *(f"- {item}" for item in skill_results),
+            "Execution mode: AgentAscend backend runtime worker",
+        ]
+    )
+    _create_and_complete_step(
+        execution_id,
+        step_order,
+        "output",
+        "Persist runtime output",
+        {"task_id": task_id, "agent_id": agent["agent_id"], "output_type": "text", "content_length": len(content)},
+    )
+    return {"status": "completed", "content": content, "approval_required": 0, "output_created": True}
+
+
+def _execute_legacy_user_task(task: dict[str, Any]) -> str:
     task_type = str(task.get("type") or "general").strip().lower()
     title = str(task.get("title") or "Untitled task").strip()
     agent_id = str(task.get("agent_id") or task.get("assigned_to") or "unassigned")
@@ -539,6 +749,7 @@ def _task_queue_worker(_job: dict[str, Any]) -> dict[str, Any]:
     completed = 0
     failed = 0
     output_count = 0
+    approval_required = 0
 
     for row in rows:
         task = dict(row)
@@ -567,7 +778,11 @@ def _task_queue_worker(_job: dict[str, Any]) -> dict[str, Any]:
             )
             conn.commit()
         try:
-            content = _execute_user_task(task)
+            runtime_result = _execute_agent_runtime_task(task)
+            if runtime_result.get("status") == "pending_approval":
+                approval_required += int(runtime_result.get("approval_required") or 0)
+                continue
+            content = str(runtime_result.get("content") or _execute_legacy_user_task(task))
             output_id = f"out_{uuid.uuid4().hex[:10]}"
             title = f"Output for {task.get('title') or task_id}"
             size_bytes = len(content.encode("utf-8"))
@@ -619,13 +834,16 @@ def _task_queue_worker(_job: dict[str, Any]) -> dict[str, Any]:
                 conn.commit()
             failed += 1
 
+    metadata = {"processed": processed, "completed": completed, "failed": failed, "output_count": output_count}
+    if approval_required:
+        metadata["approval_required"] = approval_required
     return {
         "status": "success",
         "summary": (
             f"Task queue worker processed={processed}, completed={completed}, "
-            f"failed={failed}, output_count={output_count}"
+            f"failed={failed}, approval_required={approval_required}, output_count={output_count}"
         ),
-        "metadata": {"processed": processed, "completed": completed, "failed": failed, "output_count": output_count},
+        "metadata": metadata,
     }
 
 
