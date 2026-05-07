@@ -1,15 +1,19 @@
 # AgentAscend MEMORY.md
 
-## Current operating state — verified 2026-05-04
-AgentAscend is a crypto-native AI agent platform and marketplace. The backend is the source of truth for payment, access, marketplace entitlements, scheduler state, executions, tasks, outputs, agents, and user-owned data. Frontend/v0 must display backend truth and must not use localStorage as authority for paid unlocks, access, ownership, settings, payments, or marketplace installs.
+## Current operating state — verified 2026-05-05
+AgentAscend is a crypto-native AI agent platform and marketplace. The backend is the source of truth for payment, access, marketplace entitlements, scheduler state, executions, tasks, outputs, agents, and user-owned data. Runtime-worker backend is live, the runtime-aware frontend/source audit passed, and owner-assisted logged-in QA verified the core runtime loop: Agent → Run Agent → Task → Execution → Output. Frontend/v0 must display backend truth and must not use localStorage as authority for paid unlocks, access, ownership, settings, payments, or marketplace installs.
 
 ## Verified production baseline
 - Git branch: `main`.
-- Backend-feature baseline: `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa` (`backend: add owner scoped deployment events`). Latest Railway commit can be a docs-only cleanup commit; verify before acting.
-- Ahead/behind: `0 / 0` at cleanup start.
-- Railway `AgentAscend`: SUCCESS at `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa` (deployment `1bd2d398-fd7e-4916-80ce-a6c90f5c6010`).
-- Railway `AgentAscend-Scheduler`: SUCCESS at `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa` (deployment `51f5f065-2e74-4824-b607-2477c5c7241e`).
+- Runtime-worker/backend baseline: `5e7afb1a2b6dfcab8d0fbc2912d33013287fa939` live on Railway. Local git may include additional unpushed docs/planning commits; verify before acting.
+- Current local main baseline before this docs update: HEAD `37397b695b6e20d5cb9ab48b7f4b938504317618`; `origin/main` `5e7afb1a2b6dfcab8d0fbc2912d33013287fa939`; ahead/behind `3 / 3`. Do not assume push is safe without exact scope review.
+- Railway `AgentAscend`: SUCCESS at `5e7afb1a2b6dfcab8d0fbc2912d33013287fa939` (deployment `2da5f5e3`, verified 2026-05-05).
+- Railway `AgentAscend-Scheduler`: SUCCESS at `5e7afb1a2b6dfcab8d0fbc2912d33013287fa939` (deployment `df039284`, verified 2026-05-05).
 - Live API: `GET /health` HTTP 200; `GET /openapi.json` HTTP 200 valid JSON; HSTS and standard API security headers present.
+
+
+## Standing post-deploy QA rule — added 2026-05-06
+After every AgentAscend deploy, Hermes must run the matching post-deploy QA checklist before final PASS. This applies to Railway backend/API, Railway scheduler, Vercel/frontend/v0, docs-only deploys, backend commits, frontend ZIP/source deployments, and scheduler/runtime-worker deployments. If required QA is blocked, report PARTIAL with the exact blocker and next safe step; never mark deploy PASS. Use the local Playwright harness at `/tmp/agentascend-browser-qa/agentascend-browser-qa.js` for safe frontend visual/route smoke when available, with payment/admin/scheduler blockers enabled.
 
 ## Forge backend state
 Live OpenAPI confirms these backend routes are deployed:
@@ -64,11 +68,11 @@ Hermes multi-agent automation policy: use specialized report-first agents for Re
 Do not change scheduler jobs, run `/jobs/run-due`, or run payment/scheduler canaries without explicit approval.
 
 ## Frontend/product state
-The logged-in frontend is the biggest product bottleneck. Many `/app` pages remain placeholder-heavy or only partially wired to backend truth: overview, agents, deployments, workflows, tasks, outputs, executions, token, community, and settings. Next product work should be v0/frontend polish around live Forge/backend routes and live dashboard contracts. No fake localStorage unlock/payment/access/settings persistence.
+Owner-assisted logged-in QA has verified the core runtime product loop: Agent → Run Agent → Task → Execution → Output. The frontend no longer appears blocked on backend integration for tasks, outputs, or executions. Next work should focus on frontend polish, workflow builder UX, output UX, workflow execution UX, task detail UX, execution detail UX, and deployment timeline UX. Full visual workflow graph editing remains not live. Pump.fun payment flow remains separate and should not be touched during the next frontend polish phase.
 
 ## Current next recommended phases
-1. Frontend/v0 implementation against live backend truth: Forge agent creation/config/run/deploy, Command Center, deployment events, and placeholder cleanup.
-2. Remaining backend gap slices one at a time only when a frontend contract needs them.
+1. Swarm Cycle 003: frontend polish and workflow builder/output UX around the verified runtime loop.
+2. Add remaining backend gap slices one at a time only when frontend polish identifies a real missing endpoint.
 3. Multi-agent architecture setup after frontend/backend product contracts are clearer.
 4. Continue docs/wiki/Obsidian cleanup in small batches; do not preserve stale phase-blocker language as current status.
 

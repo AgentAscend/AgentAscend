@@ -70,3 +70,9 @@ Any automation must stop and report if it encounters:
 - System policies and approved cronjob records go under `system/`.
 - Do not delete raw evidence during cleanup.
 - Do not stage `.obsidian` workspace or graph files unless explicitly requested.
+
+## Standing post-deploy QA gate
+
+After every deploy, Hermes must run post-deploy QA before final PASS. The type of QA depends on deploy type. If QA is blocked, report PARTIAL, never PASS. Use `docs/post-deploy-qa-protocol.md` as the standing runbook.
+
+Minimum universal checks include deployment status, `/health`, `/openapi.json`, security headers, critical OpenAPI route presence, auth gates, and sanitized logs. Frontend deploys additionally require live route/header checks, Playwright route/render smoke when available, live bundle marker checks, payment/wallet regression checks, admin/scheduler exposure checks, and localStorage authority checks. Backend/runtime deploys additionally require task-runtime aggregate checks when relevant. Docs-only deploys still require universal post-deploy checks because they can trigger Railway deploys.

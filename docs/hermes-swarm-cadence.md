@@ -33,3 +33,7 @@ Always requires explicit owner approval for the exact action. Includes productio
 - Runtime/Forge backlog reprioritization.
 - Payment/access aggregate audit design review without production verification.
 - Community drafts for internal review only.
+
+## Standing post-deploy QA gate
+
+Level 3 push/deploy work cannot end at deployment success. After every deploy, Hermes must run the matching post-deploy QA checklist from `docs/post-deploy-qa-protocol.md` before final PASS. If required QA is blocked, report PARTIAL with the blocker and next safe step. Frontend deploys must use the local Playwright harness when available; backend/scheduler deploys must include health/OpenAPI/routes/auth/security/log checks and task-runtime aggregate checks when relevant.
