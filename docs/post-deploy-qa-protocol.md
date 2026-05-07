@@ -194,3 +194,9 @@ Every deploy final report must include:
 - If route/auth/security regression occurs, result is FAIL.
 - If deploy succeeds but logs are unavailable, result is PARTIAL unless other evidence is enough and the limitation is stated.
 - If any payment/admin/scheduler unsafe route is exposed in frontend, result is FAIL.
+
+## Related
+- [[current-project-state|Current Project State]]
+- [[AgentAscend]]
+- [[Hermes]]
+- [[Cronjobs]]

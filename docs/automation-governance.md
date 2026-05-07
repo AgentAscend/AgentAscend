@@ -76,3 +76,11 @@ Any automation must stop and report if it encounters:
 After every deploy, Hermes must run post-deploy QA before final PASS. The type of QA depends on deploy type. If QA is blocked, report PARTIAL, never PASS. Use `docs/post-deploy-qa-protocol.md` as the standing runbook.
 
 Minimum universal checks include deployment status, `/health`, `/openapi.json`, security headers, critical OpenAPI route presence, auth gates, and sanitized logs. Frontend deploys additionally require live route/header checks, Playwright route/render smoke when available, live bundle marker checks, payment/wallet regression checks, admin/scheduler exposure checks, and localStorage authority checks. Backend/runtime deploys additionally require task-runtime aggregate checks when relevant. Docs-only deploys still require universal post-deploy checks because they can trigger Railway deploys.
+
+## Weekly system hygiene automation
+
+Hermes weekly local-only hygiene job `5cf95fc08134` is approved by direct owner request for report-only audits. It runs Sundays 09:30 local time and should write a sanitized report under `raw/automation-governance/YYYY-MM-DD-weekly-system-hygiene-cronjob-audit.md`.
+
+The job may inventory Hermes cronjobs, read live health/OpenAPI/header status, review AgentAscend scheduler posture read-only, scan docs/wiki/raw/skills/system clutter, and recommend cleanup. It must not run or modify cronjobs, change scheduler jobs, call `/jobs/run-due`, mutate production, run payments, call Pump.fun verify, send Telegram/external messages, push/deploy, edit code, or print secrets.
+
+Related: [[Cronjobs]], [[Hermes]], [[scheduler]], [[current-project-state]].

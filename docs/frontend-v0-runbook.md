@@ -74,3 +74,9 @@ Add lint when configured and reliable.
 
 ## Browser limitations
 If browser automation is blocked in the audit container by Chromium sandbox/user namespace errors, use live HTTP headers, bundle inspection, backend OpenAPI, and direct WSS connectivity as the no-payment deployment gate. State the limitation explicitly.
+
+## Related
+- [[current-project-state|Current Project State]]
+- [[AgentAscend]]
+- [[Hermes]]
+- [[Cronjobs]]

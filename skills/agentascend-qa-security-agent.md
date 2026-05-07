@@ -1,43 +1,57 @@
-# QA/Security Agent
+# Qa Security Agent
 
 ## Purpose
-Tests, source-truth checks, secret scans, auth checks, security headers, release gates.
+Operate the `agentascend-qa-security-agent` lane for AgentAscend with bounded, report-first work against the current live runtime/product state.
 
 ## Allowed scope
-read-only audits, test execution, safety reports.
+- Read `MEMORY.md` first and verify git/live production state before changes.
+- Work only in the lane implied by this skill name.
+- For documentation lanes: edit only `MEMORY.md`, `docs/`, `wiki/`, `raw/`, `learning/`, `skills/`, and `system/`.
+- For implementation lanes: propose or implement only an explicitly approved smallest-safe slice, then stop at the required gate.
 
 ## Forbidden scope
-code changes unless explicitly paired, raw secret output, production mutation.
-
-
-## Approval gates
-Explicit owner approval is required before any push, deploy, production DB mutation, migration/DDL/index change, scheduler enable/disable/run, Railway/Vercel variable change, payment/Pump.fun verification/action, access_grant or marketplace_entitlement mutation, destructive git operation, or external/community message.
-QA/Security may run read-only/local tests and audits; code fixes, pushes, and destructive operations require separate scoped approval.
+- No backend/frontend code changes unless the owner explicitly requests that implementation slice.
+- No production DB mutation, migrations, DDL, or indexes without explicit approval.
+- No Railway/Vercel variable changes without explicit approval.
+- No scheduler job enable/disable/run, and no `/jobs/run-due`.
+- No payments, payment intents, Pump.fun verify, access_grants, marketplace_entitlements, Pump.fun claims, buyback settings, or wallet actions.
+- No Telegram/external messages unless explicitly approved.
+- No secrets or raw private data in output or files.
+- Do not stage `.obsidian` workspace/graph files.
 
 ## Required checks
-Git scope, diff checks, relevant tests, live auth gates, security headers, secret scan.
+1. Read `MEMORY.md`.
+2. Verify git branch, HEAD, origin/main, ahead/behind, staged files, and dirty summary.
+3. Verify relevant live health/OpenAPI/security headers when production state matters.
+4. Use the standing post-deploy QA protocol after any deploy-triggering push.
+5. Run `git diff --check` and a focused secret/safety scan before staging docs or code.
+6. Stage only the approved file scope.
 
 ## Stop conditions
-Stop on failing gate, secret exposure risk, or unapproved mutation need.
+Stop and report PARTIAL/FAIL if the task requires unapproved production mutation, scheduler state change/run, payment action, external message, secrets, raw private data, destructive git operation, or unclear source of truth. Stop if local `main` is diverged and use a clean worktree for any approved docs-only commit.
 
-## Handoff output
-PASS/PARTIAL/FAIL gate report with exact failed command if any.
+## Handoff format
+Report PASS/PARTIAL/FAIL, files changed, checks run, live/prod evidence, blocked items, exact next owner approval prompt, and safety confirmations.
 
-## Related hubs
-- [[Agent Architecture]]
+## Current relevant project state
+- Runtime worker is live.
+- Runtime-aware frontend loop is owner-verified: Agent → Run Agent → Task → Execution → Output.
+- Payment flow works and controlled Pump.fun regression passed.
+- Replay-index DDL is not needed because protections already exist.
+- Post-deploy QA protocol is active.
+- Playwright harness exists at `/tmp/agentascend-browser-qa/agentascend-browser-qa.js`.
+- Hermes local/report-only swarm jobs and weekly hygiene job are active.
+- Telegram sends remain not approved by default.
+- Next product focus: frontend polish, workflow builder UX, output UX, task detail UX, execution detail UX, deployment events UX, and settings/community polish.
+
+## Links to runbooks and hubs
+- [[current-project-state|Current Project State]]
+- [[AgentAscend]]
 - [[Hermes]]
-- [[Ops Runbook]]
 - [[Cronjobs]]
-
-## Standing post-deploy QA gate
-
-After every deploy, Hermes must run post-deploy QA before final PASS. The type of QA depends on deploy type. If QA is blocked, report PARTIAL, never PASS. Follow `docs/post-deploy-qa-protocol.md`.
-
-Required posture:
-- Universal checks: deployment status, API health, OpenAPI validity, API security headers, critical route presence, auth gates, and sanitized logs.
-- Frontend/v0 deploys: live route smoke, frontend headers, Playwright harness smoke using `/tmp/agentascend-browser-qa/agentascend-browser-qa.js` when available, bundle marker verification, payment/wallet regression checks, admin/scheduler exposure checks, and no localStorage authority for runtime/payment/access.
-- Backend/runtime deploys: OpenAPI route diff sanity and task-runtime aggregate checks when tasks/runtime/worker are touched; report only aggregate counts and safety flags.
-- Scheduler deploys: do not run scheduler jobs or `/jobs/run-due`; distinguish natural due-job activity after restart from operator-triggered runs.
-- Docs-only deploys: still run universal checks and report unexpected route/API changes as PARTIAL/FAIL.
-
-PASS is allowed only after the required post-deploy QA passes. If Playwright is unavailable for a frontend deploy, result is at most static/source PASS plus visual QA PARTIAL. If production health fails, auth/security routes regress, or unsafe payment/admin/scheduler frontend exposure appears, result is FAIL.
+- [[scheduler|Scheduler]]
+- [[frontend-v0-workflow|Frontend v0 Workflow]]
+- `docs/post-deploy-qa-protocol.md`
+- `docs/automation-governance.md`
+- `docs/hermes-agent-operating-model.md`
+- `docs/hermes-swarm-cadence.md`

@@ -12,20 +12,30 @@ aliases:
 The frontend is managed through v0/Vercel iterations. Current work should be patch-only, backend-truth-first, and verified from fresh ZIP extraction plus live bundle/API checks.
 
 ## Current frontend/product status
-Logged-in frontend remains the biggest product bottleneck. Pages needing real backend-aligned polish include:
+Owner-assisted logged-in QA has passed for the verified runtime loop: Agent → Run Agent → Task → Execution → Output. The prior runtime-aware source/build audit warning is closed for this loop. Frontend no longer appears blocked on backend integration for tasks, outputs, or executions.
+
+## Current focus pages
 - `/app/overview`
 - `/app/agents`
-- `/app/deployments`
-- `/app/workflows`
 - `/app/tasks`
 - `/app/outputs`
 - `/app/executions`
-- `/app/token`
-- `/app/community`
+- `/app/workflows`
+- `/app/deployments`
 - `/app/settings`
+- `/app/community`
 
 ## Backend truth available now
 Live OpenAPI includes Forge capability/templates, agent definitions, run/deploy/workflow bridges, Command Center, deployment events, Pump.fun routes, marketplace/access surfaces, and execution routes. The next v0 prompts should wire UI to these contracts instead of showing fake local data.
+
+## Remaining frontend/product gaps
+- Workflow builder graph UX.
+- Output search/export/bulk UX.
+- Task detail UX.
+- Execution detail UX.
+- Deployment events timeline/log UX.
+- Settings persistence polish.
+- Token/community UX.
 
 ## Rules for v0 prompts
 - No redesign unless explicitly requested.
@@ -37,16 +47,16 @@ Live OpenAPI includes Forge capability/templates, agent definitions, run/deploy/
 
 ## Verification gates
 - Fresh ZIP extraction in `/tmp`.
-- `npm install`, typecheck/build/lint where available.
+- Pinned package-manager install, source-truth check, typecheck, lint, build, and audit.
 - API adapter contract check against live OpenAPI.
 - Page-consumption gate: pages must actually render hook/API data, not merely import adapters.
-- Live Vercel route/chunk marker scan after deploy.
+- Live Vercel route/header/chunk marker scan after deploy.
+- Safe Playwright route/render smoke when available.
 
 ## Relationships
 - [[current-project-state|Current Project State]]
 - [[Launch Readiness]]
 - [[Pump.fun Tokenized Agent Payments]]
 - [[Payment Access Control]]
-- [[marketplace|Marketplace]]
 - [[known-issues|Known Issues]]
 - [[Roadmap]]

@@ -8,29 +8,41 @@ aliases:
 # Current Project State
 
 ## Summary
-AgentAscend is in a soft-launch/product-integration posture. Payment/access hardening and Forge backend slices are live; the largest current bottleneck is the logged-in v0 frontend using the live backend honestly instead of placeholders or client-side authority.
+AgentAscend is in a live runtime/product-polish posture. Payment/access regression, Forge/backend routes, runtime worker, execution/task/output loop, and post-deploy QA are live. The current bottleneck is frontend product polish and workflow/output UX against backend truth.
 
 ## Components
-- Backend: FastAPI on Railway at the public API domain.
-- Frontend: v0/Next.js on Vercel.
-- Database: Railway Postgres for production persistence.
-- Scheduler: separate Railway `AgentAscend-Scheduler` worker.
-- Knowledge system: `MEMORY.md`, `raw/`, `wiki/`, `docs/`, `learning/`, `skills/`.
+- Backend/API: Railway FastAPI at `https://api.agentascend.ai`.
+- Frontend: v0/Next.js on Vercel at `https://www.agentascend.ai`.
+- Database: Railway Postgres.
+- Scheduler: separate Railway `AgentAscend-Scheduler` worker with DB-backed jobs.
+- Automation: Hermes cronjobs and AgentAscend scheduler jobs are separate systems.
+- Knowledge system: `MEMORY.md`, `raw/`, `wiki/`, `docs/`, `learning/`, `skills/`, `system/`.
 
-## Current production status — verified 2026-05-04
-- Production backend-feature baseline: `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa`; later docs-only cleanup commits may redeploy without changing OpenAPI/backend behavior. Verify Railway before acting.
-- Web deployment: SUCCESS (`1bd2d398-fd7e-4916-80ce-a6c90f5c6010`).
-- Scheduler deployment: SUCCESS (`51f5f065-2e74-4824-b607-2477c5c7241e`).
+## Current production status — verified 2026-05-07
+- `origin/main`: `712c05e8d1c1b9c05bae5d8723713ff80b5c5567`.
+- Railway `AgentAscend`: SUCCESS at commit `712c05e`, deployment `ddf9b9a6`.
+- Railway `AgentAscend-Scheduler`: SUCCESS at commit `712c05e`, deployment `c2f213a7`.
 - `/health`: HTTP 200.
 - `/openapi.json`: HTTP 200 valid JSON.
-- API HSTS/security headers: present on checked responses.
-- Live OpenAPI includes Forge capabilities/templates, full agent definitions, agent run/deploy bridge routes, workflow run, Command Center, deployment events, Pump.fun create/verify, and admin audit routes.
+- API security headers: HSTS, CSP, Permissions-Policy, Referrer-Policy, X-Content-Type-Options, X-Frame-Options present.
+- Live OpenAPI includes Pump.fun create/verify, Forge capabilities/templates, agent definitions/run/deploy, workflow run, Command Center, tasks, outputs, executions, deployment events, and admin task-runtime aggregate routes.
 
 ## Product status
-- Pump.fun marketplace payment regression: PASS.
-- Replay-index DDL: not needed now.
-- Scheduler: eight approved/audited jobs enabled; Telegram summary, roadmap review, and git summary held under documented conditions.
-- Frontend: next major bottleneck. Many logged-in pages still need backend-truth polish: overview, agents, deployments, workflows, tasks, outputs, executions, token, community, settings.
+- Runtime worker is live.
+- Runtime-aware frontend loop is owner-verified: Agent → Run Agent → Task → Execution → Output.
+- Post-deploy QA protocol is active and mandatory before final PASS after every deploy.
+- Local Playwright harness is available at `/tmp/agentascend-browser-qa/agentascend-browser-qa.js` for safe frontend route/render smoke.
+- Replay-index DDL is not needed because equivalent protections already exist.
+- Payment flow works and controlled Pump.fun regression passed.
+- Telegram sends remain not approved by default.
+
+## Remaining backend/product gaps
+- Full visual workflow graph builder.
+- Richer output search/export/bulk actions.
+- Task and execution detail UX.
+- Deployment scale/rollback/log streaming.
+- Settings persistence polish.
+- Token/community UX as future slices.
 
 ## Relationships
 - [[AgentAscend]]
@@ -39,23 +51,11 @@ AgentAscend is in a soft-launch/product-integration posture. Payment/access hard
 - [[Payment Access Control]]
 - [[scheduler|Scheduler]]
 - [[Cronjobs]]
+- [[Hermes]]
 - [[Execution Ledger]]
 - [[frontend-v0-workflow|Frontend v0 Workflow]]
 - [[known-issues|Known Issues]]
 - [[Roadmap]]
 
-## Recent Evidence
-- [[raw/launch-evidence/2026-05-03-pumpfun-controlled-payment-regression-pass|2026-05-03 controlled Pump.fun payment regression PASS]]
-- [[raw/security-reviews/2026-05-02-replay-index-preflight|2026-05-02 replay-index preflight PASS / DDL not needed]]
-- [[raw/scheduler-runtime-audits/2026-05-02-final-scheduler-posture|2026-05-02 final scheduler posture]]
-- [[raw/security-reviews/2026-05-02-node-helper-dependency-audit|2026-05-02 Node helper dependency audit baseline]]
-- Commits: `239fa79` dev dependency cleanup, `a8ad3ba` Pump.fun SDK 3.0.3, `2d00a31` controlled regression evidence, `5ac6d06` Forge definitions, `34a8c21` Command Center, `{prod_short}` deployment events.
-
-## Next actions
-1. Wire v0 UI to live backend truth for Forge/Command Center/deployment events.
-2. Remove or gate placeholder/localStorage-authoritative frontend behavior.
-3. Add remaining backend slices only one at a time when live frontend contracts require them.
-4. Defer multi-agent role setup until product contracts stabilize.
-
-
-Swarm/current git note: local main may be ahead of origin by `6aac0e3` runtime-worker and `99f811a` swarm docs. Swarm docs are usable locally/report-only, but pushing main would include runtime-worker unless the owner approves a split or queued/running task risk check.
+## Notes
+Next product focus: frontend polish, workflow builder UX, output UX, task detail UX, execution detail UX, deployment events UX, and settings/community polish. Keep Pump.fun separate unless explicitly scoped.

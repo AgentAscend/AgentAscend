@@ -130,3 +130,9 @@ Known held-job conditions:
 - `default-telegram-status-summary`: enable later only as report-only unless outbound Telegram sending receives separate owner approval and `AGENT_RUNTIME_TELEGRAM_STATUS_SEND_ENABLED=true` is intentionally configured.
 - `default-roadmap-review`: enable later only as placeholder/report-first; no model/file mutation is expected.
 - `default-git-status-summary`: keep disabled unless production git becomes available or owner accepts sanitized unavailable reports.
+
+## Related
+- [[current-project-state|Current Project State]]
+- [[AgentAscend]]
+- [[Hermes]]
+- [[Cronjobs]]

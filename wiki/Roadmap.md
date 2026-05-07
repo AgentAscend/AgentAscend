@@ -8,36 +8,36 @@ aliases:
 # Roadmap
 
 ## Summary
-AgentAscend's near-term roadmap should move from backend-hardening phases into frontend/product integration against live backend truth. Payment/access proof and Forge backend foundations are live; the bottleneck is now making the logged-in product feel real, honest, and useful.
+AgentAscend's near-term roadmap has moved from backend hardening into frontend/product polish against live backend truth. Payment/access proof, Forge backend foundations, runtime worker, and the core runtime loop are live.
 
 ## Immediate priorities
-1. Frontend/v0 implementation against live backend routes:
-   - Forge agent create/read/config.
-   - capability registry/templates.
-   - run/deploy/workflow bridge actions with honest queued/running copy.
-   - Command Center aggregate.
-   - deployment events timeline.
-2. Remove fake/localStorage authority from logged-in app pages.
-3. Patch placeholder-heavy pages: overview, agents, deployments, workflows, tasks, outputs, executions, token, community, settings.
-4. Add backend slices one at a time only when a frontend contract requires them.
+1. Frontend polish for the verified runtime loop:
+   - Overview/Command Center clarity.
+   - Agent run feedback and next-step guidance.
+   - Task detail UX.
+   - Execution detail UX.
+   - Output search/export/share/delete honest UX.
+   - Deployment events/timeline UX.
+2. Workflow builder UX:
+   - Honest partial-live state.
+   - Visual graph builder as a future/backend slice.
+   - Workflow run/history details where live contracts exist.
+3. Settings/community/token polish without fake authority.
+4. Add backend slices one at a time only when frontend polish proves a real missing endpoint.
 
 ## Hardening watch items
 - Monitor Pump.fun/Solana transitive dependency advisories; do not blindly run audit fixes.
 - Keep replay-index DDL on hold unless schema drift appears; current preflight says DDL not needed.
 - Keep held scheduler jobs disabled unless owner approves enablement under documented conditions.
+- Convert/pause/remove legacy Telegram Hermes cronjobs only with owner approval.
 - Keep payment/security/tokenomics/public launch decisions under owner/Premium Strategic review.
 
 ## Later phases
-- Multi-agent role setup after frontend/backend product contracts stabilize.
+- Full visual workflow graph builder.
+- Richer deployment scale/rollback/log streaming.
 - Marketplace creator product polish and clearer install/use lifecycle.
-- ASND utility expansion grounded in actual platform usage.
-
-## Recent Evidence
-- [[raw/launch-evidence/2026-05-03-pumpfun-controlled-payment-regression-pass|2026-05-03 controlled Pump.fun payment regression PASS]]
-- [[raw/security-reviews/2026-05-02-replay-index-preflight|2026-05-02 replay-index preflight PASS / DDL not needed]]
-- [[raw/scheduler-runtime-audits/2026-05-02-final-scheduler-posture|2026-05-02 final scheduler posture]]
-- [[raw/security-reviews/2026-05-02-node-helper-dependency-audit|2026-05-02 Node helper dependency audit baseline]]
-- Commits: `239fa79` dev dependency cleanup, `a8ad3ba` Pump.fun SDK 3.0.3, `2d00a31` controlled regression evidence, `5ac6d06` Forge definitions, `34a8c21` Command Center, `{prod_short}` deployment events.
+- Token/community UX grounded in actual platform usage.
+- Multi-agent role setup after frontend/backend product contracts stabilize.
 
 ## Relationships
 - [[current-project-state|Current Project State]]
@@ -45,4 +45,5 @@ AgentAscend's near-term roadmap should move from backend-hardening phases into f
 - [[frontend-v0-workflow|Frontend v0 Workflow]]
 - [[Agent Architecture]]
 - [[Payment Access Control]]
+- [[Cronjobs]]
 - [[scheduler|Scheduler]]

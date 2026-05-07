@@ -106,3 +106,9 @@ Global forbidden actions:
 - Approval gates: every external message or public claim.
 - First backlog item: draft an internal soft-launch update that clearly labels runtime-worker as local/not-pushed.
 - Report format: draft only plus fact/source checklist.
+
+## Related
+- [[current-project-state|Current Project State]]
+- [[AgentAscend]]
+- [[Hermes]]
+- [[Cronjobs]]

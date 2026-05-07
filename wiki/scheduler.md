@@ -8,7 +8,18 @@ aliases:
 # Scheduler
 
 ## Summary
-The AgentAscend scheduler is a separate Railway worker using DB-backed scheduled jobs and job run records. Current posture is report-first and audited for the enabled workload.
+The AgentAscend scheduler is a separate Railway worker using DB-backed scheduled jobs and job run records. It is production-live and currently runs an audited enabled set, with external-message and placeholder jobs held.
+
+## Components
+- Railway service: `AgentAscend-Scheduler`.
+- Scheduler tables: scheduled jobs and job runs.
+- Execution Ledger integration for scheduler runs.
+- Task queue worker for production queued tasks.
+
+## Current verified production — 2026-05-07
+- `AgentAscend-Scheduler`: SUCCESS at commit `712c05e`, deployment `c2f213a7`.
+- Recent runs show natural scheduler activity, including frequent successful task queue worker runs.
+- Do not manually run scheduler jobs or call `/jobs/run-due` during docs/audit cleanup.
 
 ## Enabled / audited jobs
 - `default-backend-health-check`
@@ -21,27 +32,16 @@ The AgentAscend scheduler is a separate Railway worker using DB-backed scheduled
 - `default-task-queue-worker`
 
 ## Disabled / held jobs
-- `default-telegram-status-summary`: report-only by default; no-send canary passed; outbound sends require separate owner approval.
-- `default-roadmap-review`: placeholder/report-first; no model call; no file mutation; canary passed; enable only with owner approval.
-- `default-git-status-summary`: fails closed safely when git is unavailable; production currently lacks git; keep disabled unless sanitized unavailable reports are acceptable.
-
-## Current verified production
-- `AgentAscend-Scheduler` Railway deployment: SUCCESS at `26aa8abca8bc5bcf8f12a25a5fb9a222f5576eaa`.
-- Do not change scheduler job state, run scheduler jobs, or call `/jobs/run-due` during docs-only cleanup.
-
-## Recent Evidence
-- [[raw/scheduler-runtime-audits/2026-05-02-final-scheduler-posture|2026-05-02 final scheduler posture]]
-- [[raw/scheduler-runtime-audits/2026-05-02-task-worker-enablement|2026-05-02 task worker enablement canary]]
-- [[Cronjobs]]
-- [[Execution Ledger]]
+- `default-telegram-status-summary`: report-only by default; outbound sends require separate owner approval.
+- `default-roadmap-review`: placeholder/report-first; enable only with owner approval.
+- `default-git-status-summary`: fails closed when git is unavailable; keep held unless unavailable reports are acceptable.
 
 ## Relationships
 - [[Cronjobs]]
 - [[Execution Ledger]]
 - [[Ops Runbook]]
 - [[current-project-state|Current Project State]]
+- [[Hermes]]
 
-## Superseded blockers
-- “task_queue_worker disabled” is superseded by audited enablement.
-- “Telegram status summary auto-sends” is superseded by report-only default with sends disabled.
-- “git status job unsafe” is superseded by fail-closed behavior, but the job remains held because production lacks git.
+## Notes
+`default-task-queue-worker` can mutate task/output/execution state by processing real queued production tasks. It is audited/live, but do not run manual canaries without explicit approval.
