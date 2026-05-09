@@ -34,10 +34,11 @@ AgentAscend is in a live runtime/product-polish posture. Payment/access regressi
 - Local Playwright harness is available at `/tmp/agentascend-browser-qa/agentascend-browser-qa.js` for safe frontend route/render smoke.
 - Replay-index DDL is not needed because equivalent protections already exist.
 - Payment flow works and controlled Pump.fun regression passed.
+- Workflow builder owner-isolation is verified live with throwaway users: workflow creation, graph save/read, run/runs, and cross-user denial passed. Evidence: [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa]].
 - Telegram sends remain not approved by default.
 
 ## Remaining backend/product gaps
-- Full visual workflow graph builder.
+- Full visual workflow graph builder; owner-scoped create/save/read/run works, but node configuration/labels and richer run-history detail remain product polish.
 - Richer output search/export/bulk actions.
 - Task and execution detail UX.
 - Deployment scale/rollback/log streaming.
@@ -58,4 +59,4 @@ AgentAscend is in a live runtime/product-polish posture. Payment/access regressi
 - [[Roadmap]]
 
 ## Notes
-Next product focus: frontend polish, workflow builder UX, output UX, task detail UX, execution detail UX, deployment events UX, and settings/community polish. Keep Pump.fun separate unless explicitly scoped.
+Next product focus: workflow node configuration/labels, richer run-history details, output search/export/bulk UX, task/execution detail UX, deployment events/log-streaming UX, and settings/community polish. Keep Pump.fun separate unless explicitly scoped.

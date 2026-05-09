@@ -31,7 +31,7 @@ Agent Architecture defines the safe Hermes/AgentAscend multi-agent operating mod
 - [[Payment Access Control]]
 
 ## Notes
-The default autonomy level is report-only. Use `delegate_task` for short isolated reviews and full Hermes subprocesses only for bounded longer missions with explicit file ownership. Every agent must stop before push, deploy, DB mutation, scheduler state change, payment action, or external message unless the owner explicitly approves that action.
+The default autonomy level is report-only. Use `delegate_task` for short isolated reviews and full Hermes subprocesses only for bounded longer missions with explicit file ownership. Every agent must stop before push, deploy, DB mutation, scheduler state change, payment action, or external message unless the owner explicitly approves that action. Workflow routes are now owner-scoped; the runtime worker can run agents independently of full visual workflow graph support.
 
 
 Swarm activation status: local manifest/report-only first. The local docs commit `99f811a` sits on top of backend runtime-worker commit `6aac0e3`; do not treat a normal push as docs-only unless commits are split with explicit owner approval.

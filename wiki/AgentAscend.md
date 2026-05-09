@@ -25,7 +25,7 @@ AgentAscend is a monetized AI x Web3 agent platform. It combines backend-authori
 ## Current status
 - Production API and scheduler are healthy at commit `712c05e` docs/evidence baseline.
 - Runtime-worker backend is live.
-- Runtime-aware frontend loop is owner-verified: Agent → Run Agent → Task → Execution → Output.
+- Runtime-aware frontend loop is owner-verified: Agent → Run Agent → Task → Execution → Output. Workflow owner-isolation is also verified live: create/save/read/run works for the owner and cross-user workflow access is blocked.
 - Pump.fun payment/access regression passed; Pump.fun payment flow remains separate from the next frontend polish phase.
 - Forge backend routes are live through capabilities/templates, definitions, Command Center, deployment events, and run/deploy bridges.
 - Post-deploy QA protocol is active.
@@ -38,4 +38,4 @@ AgentAscend is a monetized AI x Web3 agent platform. It combines backend-authori
 - [[Roadmap]]
 
 ## Notes
-Backend remains the authority for payment, access, marketplace entitlements, tasks, outputs, executions, and agents. ASND utility should be grounded in real platform usage, not price or return promises.
+Backend remains the authority for payment, access, marketplace entitlements, tasks, outputs, executions, agents, and workflow ownership. ASND utility should be grounded in real platform usage, not price or return promises.

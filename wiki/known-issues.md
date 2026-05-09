@@ -13,8 +13,8 @@ Known issues are current unresolved product, integration, or hardening risks. St
 
 ## Current high-priority issues
 1. Frontend product polish remains the main bottleneck now that the runtime loop is live and owner-verified.
-2. Workflow builder, output UX, task detail, execution detail, deployment events/log UX, settings persistence, token/community polish remain incomplete.
-3. localStorage must not grant paid access, marketplace ownership/install, payment verification, auth bypass, or production settings authority.
+2. Full visual workflow graph editing, branching, output schemas, output UX, task detail, execution detail, deployment events/log UX, settings persistence, token/community polish remain incomplete; owner-isolation for basic workflow create/save/read/run is verified.
+3. localStorage must not grant paid access, marketplace ownership/install, workflow ownership, graph state, payment verification, auth bypass, or production settings authority.
 4. Remaining Pump.fun/Solana runtime dependency advisories are accepted/monitored, not eliminated.
 5. Legacy Telegram Hermes cronjobs remain enabled but are high-risk until converted/paused/removed with owner approval.
 6. Original local `main` is diverged from `origin/main`; use clean worktrees until reconciled.
@@ -26,6 +26,7 @@ Known issues are current unresolved product, integration, or hardening risks. St
 - Controlled Pump.fun payment regression pending/partial: superseded by 2026-05-03 PASS archive.
 - Forge routes not live: superseded by live OpenAPI.
 - Tasks/outputs/executions backend-required blocker: superseded by runtime worker and owner-verified frontend loop.
+- Workflow owner-isolation unverified: superseded by 2026-05-09 live QA PASS archived at [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa]].
 - Task queue worker disabled: superseded by audited enablement.
 - Telegram auto-send risk: superseded by report-only/no-send default, though outbound sends still need owner approval.
 - Old failed deploy notes: superseded by later successful Railway deployments.

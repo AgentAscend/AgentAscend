@@ -1,7 +1,7 @@
 # AgentAscend MEMORY.md
 
-## Current operating state — verified 2026-05-07
-AgentAscend is a crypto-native AI agent platform and marketplace. The backend is the source of truth for payment, access, marketplace entitlements, scheduler state, executions, tasks, outputs, agents, and user-owned data. Runtime-worker backend is live. The runtime-aware v0/frontend loop has been owner-verified: Agent → Run Agent → Task → Execution → Output. Frontend/v0 must display backend truth and must not use localStorage as authority for paid unlocks, access, ownership, settings, payments, or marketplace installs.
+## Current operating state — verified 2026-05-09
+AgentAscend is a crypto-native AI agent platform and marketplace. The backend is the source of truth for payment, access, marketplace entitlements, scheduler state, executions, tasks, outputs, agents, workflows, and user-owned data. Runtime-worker backend is live. The runtime-aware v0/frontend loop has been owner-verified: Agent → Run Agent → Task → Execution → Output. Workflow auth ownership backend is live, and workflow-builder owner-isolation QA passed: User A create/save/read/run works through the live workflow UI/API; User B cross-user graph/save/run/runs probes fail closed with 403; graph save remains `{ nodes: [...] }`; unsupported `edges` were not sent; workflow copy is honest and partially-live. Frontend/v0 must display backend truth and must not use localStorage as authority for paid unlocks, access, ownership, settings, payments, marketplace installs, workflow ownership, or graph state.
 
 ## Verified production baseline
 - Git branch for normal work: `main`; original local `main` is currently diverged from `origin/main` and should not be pushed without exact scope review.
@@ -35,11 +35,11 @@ Hermes cronjobs are separate from AgentAscend scheduler jobs. Legacy Telegram-de
 Do not change scheduler jobs, run `/jobs/run-due`, or run payment/scheduler canaries without explicit approval.
 
 ## Frontend/product state
-Owner-assisted logged-in QA verified the runtime product loop. The frontend is no longer blocked on backend integration for tasks, outputs, or executions. Next work should focus on frontend polish, workflow builder UX, output UX, task detail UX, execution detail UX, deployment events/timeline UX, and settings/community polish. Pump.fun payment flow remains separate and should not be touched during the next frontend polish phase.
+Owner-assisted logged-in QA verified the runtime product loop. Workflow-builder owner-isolation QA PASS is archived at [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa]]. The frontend is no longer blocked on backend integration for tasks, outputs, executions, or workflow ownership basics. Next work should focus on workflow node configuration editing/labels, richer run-history details, output search/export/bulk UX, task/execution detail UX, deployment events/log-streaming UX, and settings/community polish. Pump.fun payment flow remains separate and should not be touched during the next frontend polish phase.
 
 ## Current next recommended phases
-1. Frontend polish and workflow builder/output UX around the verified runtime loop.
-2. Task, execution, output, workflow execution, deployment timeline, and settings persistence UX.
+1. Workflow node configuration editing and labels while preserving `{ nodes: [...] }`.
+2. Richer workflow run-history details, output search/export/bulk UX, task/execution/output detail, deployment log-streaming UX, and settings persistence UX.
 3. Add remaining backend slices one at a time only when frontend polish proves a real missing endpoint.
 4. Continue docs/wiki/Obsidian cleanup in small batches; mark stale phase-blocker notes as superseded instead of deleting raw evidence.
 

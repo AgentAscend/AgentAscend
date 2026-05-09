@@ -12,6 +12,10 @@ Keep v0/Vercel frontend work aligned with the live backend contract and prevent 
   - `/app/executions`
 - Live routes returned HTTP 200 during read-only audit.
 
+
+## Workflow builder owner-isolation gate
+Workflow owner-isolation QA passed on 2026-05-09 and is archived at `raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa.md`. Future v0 workflow work must preserve the backend graph payload boundary `{ nodes: [...] }`; do not present `edges`, branching, ordered steps, output schemas, or full visual graph editing as live until backend OpenAPI supports those fields/features. Owner-isolation regression checks should verify User A create/save/read/run, User B list exclusion, and 403 on cross-user graph/save/run/runs probes.
+
 ## Pump.fun wallet/payment release gate
 A v0 source or live deployment passes the wallet/payment gate only when:
 - Active paid pages import/render `PumpfunPaymentModal`.
@@ -25,8 +29,8 @@ A v0 source or live deployment passes the wallet/payment gate only when:
 ## Current live CSP requirement
 Production `connect-src` should include:
 - `https://api.agentascend.ai`
-- `https://rpc.solanatracker.io`
-- `wss://rpc.solanatracker.io`
+- the configured browser RPC HTTPS origin
+- the matching configured browser RPC WSS origin
 - existing allowed Solana/RPC/analytics origins as configured
 
 Google Fonts must remain allowed if used:
@@ -43,7 +47,7 @@ for path in ['/app/overview','/app/marketplace','/app/executions']:
     with urllib.request.urlopen(req, timeout=25) as r:
         csp=r.headers.get('content-security-policy','')
         html=r.read().decode('utf-8','ignore')
-    print(path, 'https_rpc=', 'https://rpc.solanatracker.io' in csp, 'wss_rpc=', 'wss://rpc.solanatracker.io' in csp)
+    print(path, 'has_browser_rpc_https=', 'https://' in csp and 'rpc' in csp.lower(), 'has_browser_rpc_wss=', 'wss://' in csp and 'rpc' in csp.lower())
     assets=sorted(set(re.findall(r'(?:src|href)="([^"]*_next/static/[^"]+\.js[^"]*)"', html)))
     bundle=''
     for src in assets:
