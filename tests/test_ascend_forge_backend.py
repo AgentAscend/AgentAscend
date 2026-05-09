@@ -331,7 +331,7 @@ def test_forge_workflow_run_endpoint_records_real_run(client: TestClient):
     assert body["run_id"].startswith("run_")
     assert body["run_status"] == "success"
 
-    runs = client.get(f"/workflows/{workflow_id}/runs")
+    runs = client.get(f"/workflows/{workflow_id}/runs", headers=_auth_header(token))
     _assert_status(runs, 200)
     recorded = runs.json()["runs"][0]
     assert recorded["run_id"] == body["run_id"]

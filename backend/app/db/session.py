@@ -984,6 +984,7 @@ def _init_sqlite_db():
             CREATE TABLE IF NOT EXISTS workflows (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 workflow_id TEXT UNIQUE NOT NULL,
+                owner_user_id TEXT,
                 name TEXT NOT NULL,
                 status TEXT NOT NULL,
                 runs_total INTEGER NOT NULL DEFAULT 0,
@@ -992,6 +993,10 @@ def _init_sqlite_db():
             )
             """
         )
+        workflow_columns = {row[1] for row in conn.execute("PRAGMA table_info(workflows)").fetchall()}
+        if "owner_user_id" not in workflow_columns:
+            conn.execute("ALTER TABLE workflows ADD COLUMN owner_user_id TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_workflows_owner_user_id ON workflows(owner_user_id)")
 
         conn.execute(
             """
@@ -1660,6 +1665,7 @@ _POSTGRES_TABLE_DDL = [
     """CREATE TABLE IF NOT EXISTS workflows (
         id SERIAL PRIMARY KEY,
         workflow_id TEXT UNIQUE NOT NULL,
+        owner_user_id TEXT,
         name TEXT NOT NULL,
         status TEXT NOT NULL,
         runs_total INTEGER NOT NULL DEFAULT 0,
@@ -1869,6 +1875,7 @@ _POSTGRES_INDEX_DDL = [
     "CREATE INDEX IF NOT EXISTS idx_execution_costs_execution ON execution_costs(execution_id)",
     "CREATE INDEX IF NOT EXISTS idx_execution_approvals_execution_status ON execution_approvals(execution_id, status)",
     "CREATE INDEX IF NOT EXISTS idx_agents_owner_user_id ON agents(owner_user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_workflows_owner_user_id ON workflows(owner_user_id)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at)",
     "CREATE INDEX IF NOT EXISTS idx_outputs_task_user ON outputs(task_id, user_id)",
 ]
@@ -1961,6 +1968,7 @@ _POSTGRES_COLUMN_MIGRATIONS = {
         ("deployment_id", "TEXT"),
         ("marketplace_listing_id", "TEXT"),
     ],
+    "workflows": [("owner_user_id", "TEXT")],
     "tasks": [
         ("user_id", "TEXT"), ("agent_id", "TEXT"), ("type", "TEXT NOT NULL DEFAULT 'general'"),
         ("error_message", "TEXT"), ("created_at", "TIMESTAMPTZ"),

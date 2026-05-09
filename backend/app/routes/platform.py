@@ -132,6 +132,14 @@ def _authorized_scope_user_id(user_id: str | None, authorization: str | None) ->
     return actor["user_id"]
 
 
+def _require_owned_workflow(conn, workflow_id: str, actor_user_id: str) -> None:
+    row = conn.execute("SELECT owner_user_id FROM workflows WHERE workflow_id=?", (workflow_id,)).fetchone()
+    if not row:
+        fail(404, "not_found", "Workflow not found")
+    if not row["owner_user_id"] or row["owner_user_id"] != actor_user_id:
+        fail(403, "forbidden", "Authenticated user cannot access another user's workflow")
+
+
 def _task_worker_background_enabled() -> bool:
     raw = os.getenv("AGENT_RUNTIME_TASK_WORKER_BACKGROUND_ENABLED")
     if raw is None or raw.strip() == "":
@@ -436,23 +444,29 @@ def act_on_deployment(deployment_id: str, payload: DeploymentActionRequest):
 
 
 @router.get("/workflows", response_model=WorkflowListResponse)
-def list_workflows():
+def list_workflows(authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
     with get_connection() as conn:
         workflows = conn.execute(
             """
             SELECT workflow_id, name, status, runs_total, success_rate, updated_at
             FROM workflows
+            WHERE owner_user_id=?
             ORDER BY updated_at DESC
-            """
+            """,
+            (actor,),
         ).fetchall()
 
         runs = conn.execute(
             """
-            SELECT run_id, workflow_id, status, duration_ms, started_at
-            FROM workflow_runs
-            ORDER BY started_at DESC
+            SELECT wr.run_id, wr.workflow_id, wr.status, wr.duration_ms, wr.started_at
+            FROM workflow_runs wr
+            JOIN workflows w ON w.workflow_id=wr.workflow_id
+            WHERE w.owner_user_id=?
+            ORDER BY wr.started_at DESC
             LIMIT 20
-            """
+            """,
+            (actor,),
         ).fetchall()
 
     return {
@@ -1759,10 +1773,10 @@ def create_workflow(payload: WorkflowCrudInput, authorization: str | None = Head
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO workflows(workflow_id, name, status, runs_total, success_rate, updated_at)
-            VALUES(?, ?, ?, 0, 0, datetime('now'))
+            INSERT INTO workflows(workflow_id, owner_user_id, name, status, runs_total, success_rate, updated_at)
+            VALUES(?, ?, ?, ?, 0, 0, datetime('now'))
             """,
-            (workflow_id, payload.name, payload.status),
+            (workflow_id, actor, payload.name, payload.status),
         )
         conn.commit()
     _audit(actor, "workflow.create", "workflow", workflow_id)
@@ -1773,9 +1787,7 @@ def create_workflow(payload: WorkflowCrudInput, authorization: str | None = Head
 def put_workflow_graph(workflow_id: str, payload: WorkflowGraphInput, authorization: str | None = Header(default=None)):
     actor = _require_user_id(authorization)
     with get_connection() as conn:
-        exists = conn.execute("SELECT 1 FROM workflows WHERE workflow_id=?", (workflow_id,)).fetchone()
-        if not exists:
-            fail(404, "not_found", "Workflow not found")
+        _require_owned_workflow(conn, workflow_id, actor)
         conn.execute("DELETE FROM workflow_nodes WHERE workflow_id=?", (workflow_id,))
         for node in payload.nodes:
             conn.execute(
@@ -1798,8 +1810,10 @@ def put_workflow_graph(workflow_id: str, payload: WorkflowGraphInput, authorizat
 
 
 @router.get("/workflows/{workflow_id}/graph")
-def get_workflow_graph(workflow_id: str):
+def get_workflow_graph(workflow_id: str, authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
     with get_connection() as conn:
+        _require_owned_workflow(conn, workflow_id, actor)
         rows = conn.execute(
             "SELECT node_id, node_type, config_json, position_json FROM workflow_nodes WHERE workflow_id=? ORDER BY node_id",
             (workflow_id,),
@@ -1817,8 +1831,10 @@ def get_workflow_graph(workflow_id: str):
 
 
 @router.get("/workflows/{workflow_id}/runs")
-def list_workflow_runs(workflow_id: str):
+def list_workflow_runs(workflow_id: str, authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
     with get_connection() as conn:
+        _require_owned_workflow(conn, workflow_id, actor)
         rows = conn.execute(
             """
             SELECT run_id, workflow_id, status, duration_ms, started_at
@@ -1836,9 +1852,7 @@ def run_workflow(workflow_id: str, payload: WorkflowRunInput, authorization: str
     actor = _require_user_id(authorization)
     run_id = f"run_{secrets.token_hex(6)}"
     with get_connection() as conn:
-        exists = conn.execute("SELECT 1 FROM workflows WHERE workflow_id=?", (workflow_id,)).fetchone()
-        if not exists:
-            fail(404, "not_found", "Workflow not found")
+        _require_owned_workflow(conn, workflow_id, actor)
         node_count = conn.execute("SELECT COUNT(*) AS count FROM workflow_nodes WHERE workflow_id=?", (workflow_id,)).fetchone()["count"]
         conn.execute(
             """
