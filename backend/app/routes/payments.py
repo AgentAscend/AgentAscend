@@ -284,10 +284,21 @@ def verify_payment(payload: PaymentVerifyRequest, authorization: str | None = He
             try:
                 cursor = conn.execute(
                     """
-                    INSERT INTO payments (user_id, amount, token, status, tx_signature)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO payments(
+                        user_id, amount, token, status, tx_signature,
+                        intent_reference, verification_status, updated_at, verified_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                     """,
-                    (payload.user_id, amount, selected_token, "completed", payload.tx_signature),
+                    (
+                        payload.user_id,
+                        amount,
+                        selected_token,
+                        "completed",
+                        payload.tx_signature,
+                        payload.reference,
+                        "verified",
+                    ),
                 )
             except Exception as exc:
                 if is_unique_violation(exc):
@@ -309,8 +320,17 @@ def verify_payment(payload: PaymentVerifyRequest, authorization: str | None = He
                     fail(400, TRANSACTION_SIGNATURE_USED, "Transaction signature already used")
                 raise
             conn.execute(
-                "UPDATE payment_intents SET consumed_at = CURRENT_TIMESTAMP WHERE reference = ?",
-                (payload.reference,),
+                """
+                UPDATE payment_intents
+                SET consumed_at = CURRENT_TIMESTAMP,
+                    status = ?,
+                    verification_status = ?,
+                    tx_signature = ?,
+                    completed_at = datetime('now'),
+                    updated_at = datetime('now')
+                WHERE reference = ?
+                """,
+                ("completed", "verified", payload.tx_signature, payload.reference),
             )
             conn.commit()
 
