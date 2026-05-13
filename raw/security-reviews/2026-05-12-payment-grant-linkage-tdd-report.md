@@ -104,3 +104,22 @@ PASS over changed implementation/test files.
 ```text
 Run a pre-push audit of clean worktree /tmp/agentascend-payment-grant-linkage-tdd-2026-05-13 branch backend/payment-grant-linkage-tdd at its current HEAD. Do not push, deploy, mutate production DB, run migrations, change env vars, run scheduler jobs, call /jobs/run-due, create payments, call Pump.fun verify, alter production access_grants or marketplace_entitlements, or send external messages. Verify the commit is based on current origin/main, inspect the diff for scope and secrets, rerun focused payment/admin tests plus full pytest, rerun local OpenAPI generation, confirm no forbidden files changed, and report PASS/PARTIAL/FAIL with an explicit safe-to-push recommendation. Stop before push.
 ```
+
+
+## Deployment status — 2026-05-13
+PASS — commit `7cc1c6a986e1e2a1896b5e8e5b62b36917bccc70` (`backend: harden payment grant linkage`) was pushed to `origin/main` from the clean worktree and deployed successfully.
+
+Post-deploy evidence:
+- Railway AgentAscend: SUCCESS.
+- Railway AgentAscend-Scheduler: SUCCESS.
+- Live `/health`: HTTP 200.
+- Live `/openapi.json`: HTTP 200 valid JSON.
+- Pump.fun create and verify routes present.
+- Admin payment-evidence and launch-readiness aggregate routes present.
+- `/jobs/run-due` remains present from base API state and was not called.
+
+Deployment boundaries:
+- Pump.fun payment code was not changed.
+- No production backfill was performed.
+- Historical null-heavy linkage rows, if any, remain audit-only unless future owner-approved cleanup occurs.
+- No payment actions, Pump.fun verify calls, production access-grant changes, marketplace-entitlement changes, scheduler runs, migrations, or production DB mutations occurred.

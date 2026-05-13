@@ -1,12 +1,12 @@
 # AgentAscend MEMORY.md
 
-## Current operating state — verified 2026-05-12
+## Current operating state — verified 2026-05-13
 AgentAscend is a crypto-native AI agent platform and marketplace. The backend is the source of truth for payment, access, marketplace entitlements, scheduler state, executions, tasks, outputs, agents, workflows, and user-owned data. Runtime-worker backend is live, the runtime-aware frontend/source audit passed, workflow ownership hardening is live, and full signed-in functional UX QA on 2026-05-11 verified the core loop: Ascend Forge agent creation → Run Agent → Task → Execution → Output → UI/dashboard refresh. Frontend/v0 must display backend truth and must not use localStorage as authority for paid unlocks, access, ownership, settings, payments, marketplace installs, agent metrics, workflow ownership, or runtime status.
 
 ## Verified production baseline
 - Git branch: `main`; local main is diverged from `origin/main` and must not be pushed without explicit reconciliation/scope review.
-- Current git posture observed 2026-05-12: `main...origin/main [ahead 8, behind 8]` plus broad untracked raw/wiki/skills artifacts and local `.obsidian/*` changes.
-- Latest recorded remote/deployment evidence points to `origin/main` commit `74bd6e92d2129500dc92261eda9f9b09ea2a5ae5`; live `/health` and `/openapi.json` should be rechecked before any deploy/release claim.
+- Current git posture observed 2026-05-13: local `main` remains diverged/noisy from `origin/main` after the clean-worktree deployment push; do not push local main without explicit reconciliation/scope review.
+- Latest recorded remote/deployment evidence points to `origin/main` commit `7cc1c6a986e1e2a1896b5e8e5b62b36917bccc70`; Railway AgentAscend and AgentAscend-Scheduler deployed it successfully, with live `/health` HTTP 200 and `/openapi.json` HTTP 200 valid JSON.
 - Local systemd scheduler is active/enabled as `agentascend-scheduler.service`, using `.venv/bin/python scripts/run_scheduler.py`, `Restart=always`, and `/etc/agentascend-scheduler.env`.
 - Live API: `GET https://api.agentascend.ai/health` returns HTTP 200 `{"status":"ok"}` in current checks; standard API security headers have been present in recent audits.
 
@@ -20,9 +20,8 @@ After every AgentAscend deploy, Hermes must run the matching post-deploy QA chec
 - Pump.fun payment flow remains separate from frontend polish; do not touch wallet/payment flows during routine UI/runtime polishing.
 
 ## Escalated payment/data-integrity watch
-- Read-only local scheduler/DB reports from 2026-05-11 flagged completed payment rows without active grant linkage by `payment_id` and active grants that are null-heavy for `payment_id`/`intent_reference`.
-- Treat this as a launch-risk investigation until production-vs-local scope is verified, a backfill/forward-invariant plan is approved, and tests prove future payment-created grants carry durable linkage.
-- No production DB mutation/backfill, payment replay, access grant edits, or payment verification can be run without explicit owner approval.
+- Payment↔grant linkage hardening is deployed for future legacy `/payments/verify` successes: completed payments now carry intent/verification timestamps and matching payment_intents are completed/verified with tx_signature.
+- Historical null-heavy linkage rows, if any, remain audit-only; no production DB mutation/backfill, payment replay, access grant edits, or payment verification can be run without explicit owner approval.
 
 ## Pump.fun payment state
 - Pump.fun create/verify routes are live and auth-gated: `POST /payments/pumpfun/create`, `POST /payments/pumpfun/verify`.
@@ -36,8 +35,8 @@ After every AgentAscend deploy, Hermes must run the matching post-deploy QA chec
 Enabled/audited production scheduler jobs include backend health, integration drift, wiki consistency, TODO/FIXME scan, payment route audit, failed-payment replay review, access-grant integrity check, task queue worker, git status summary, and Telegram status summary. `default-roadmap-review` remains disabled/manual because it is premium/strategy-gated. Hermes cronjobs are separate from AgentAscend DB scheduler jobs; keep report-only defaults and do not send external messages or run risky jobs unless explicitly approved.
 
 ## Current next recommended phases
-1. Verify payment↔grant linkage scope and write/execute a TDD local hardening plan before any launch expansion.
-2. Continue frontend/runtime polish: workflow node configuration labels/editing, richer run-history/runtime detail, output search/export/bulk UX, and deployment events/log-streaming UX.
+1. Return to frontend/product polish: output search/export/bulk UX, richer workflow run-history/runtime detail, and deployment events/log-streaming UX.
+2. Keep historical payment↔grant linkage repair/backfill proposal-only unless owner-approved after sanitized aggregate preflight.
 3. Add remaining backend gap slices one at a time only when frontend polish proves a real missing endpoint.
 4. Continue knowledge/wiki/Obsidian cleanup in small batches; keep routine generated cron reports out of git noise unless intentionally archived.
 5. Multi-agent architecture setup after frontend/backend product contracts are clearer.

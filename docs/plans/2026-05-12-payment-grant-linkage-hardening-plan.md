@@ -1,6 +1,6 @@
 # Payment↔Grant Linkage Hardening Plan
 
-> For Hermes: this is a planning document for a future TDD/local-first implementation. Do not use this plan as approval to push, deploy, mutate production data, run payments, call Pump.fun verify, create/revoke grants, or change scheduler state.
+> For Hermes: this plan has been executed for the future-path local TDD hardening slice and deployed via commit `7cc1c6a986e1e2a1896b5e8e5b62b36917bccc70`. It still does not approve production backfills, payment replay, Pump.fun verify calls, grant/entitlement mutations, scheduler actions, or data repair.
 
 ## Goal
 Make future payment-created access grants durably link back to their payment and intent records so AgentAscend can audit paid access end-to-end.
@@ -244,6 +244,12 @@ Proposal must include:
 Expected: report-only proposal; no data mutation.
 
 ---
+
+## Deployment status — 2026-05-13
+- Future-path legacy `/payments/verify` linkage hardening is deployed PASS.
+- Pump.fun path remains unchanged and previously verified by tests/evidence.
+- No production backfill was performed; historical repair/backfill remains proposal-only.
+- Next product direction can return to frontend/product polish.
 
 ## Completion criteria before requesting implementation commit/deploy approval
 - New tests failed first and then pass.

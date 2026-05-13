@@ -12,6 +12,11 @@ aliases:
 ## Summary
 Pump.fun tokenized-agent payments are AgentAscend's current marketplace payment path. Backend-owned payment intents and exact SDK verification are required before access or marketplace entitlement is granted.
 
+## Components
+- Auth-gated Pump.fun create and verify routes.
+- Node helper / Pump.fun SDK validation path.
+- Payment intent, completed payment, access grant, and marketplace entitlement records.
+
 ## Current status
 - Live routes: `POST /payments/pumpfun/create`, `POST /payments/pumpfun/verify`.
 - Controlled regression PASS: public tx `2ydGT5uPArgKx2WkiBZ9xNm17ap6WB4BVznJTNwThDThS8qia6zT5vq76CHgEDFwW4gj7FfMyTHJweobt9K5UhrR`.
@@ -19,6 +24,7 @@ Pump.fun tokenized-agent payments are AgentAscend's current marketplace payment 
 - Backend evidence: payment found, payment_id present, payment intent completed, verification_status verified, access grant present, listing-scoped true, marketplace entitlement present.
 - Duplicate/replay aggregate groups remained zero.
 - Exact submitted `tx_signature` binding is implemented and deployed.
+- Payment↔grant linkage hardening did not change Pump.fun route/helper behavior; existing Pump.fun tests still verify linked payment, intent, access grant, listing scope, and marketplace entitlement.
 - Runtime helper dependency: `@pump-fun/agent-payments-sdk` 3.0.3.
 
 ## Boundaries
@@ -29,6 +35,7 @@ Pump.fun tokenized-agent payments are AgentAscend's current marketplace payment 
 
 ## Recent Evidence
 - [[raw/launch-evidence/2026-05-03-pumpfun-controlled-payment-regression-pass|2026-05-03 controlled Pump.fun payment regression PASS]]
+- [[raw/security-reviews/2026-05-12-payment-grant-linkage-tdd-report|2026-05-12 payment↔grant linkage TDD and deployment PASS]]
 - [[raw/security-reviews/2026-05-02-replay-index-preflight|2026-05-02 replay-index preflight PASS / DDL not needed]]
 - [[raw/scheduler-runtime-audits/2026-05-02-final-scheduler-posture|2026-05-02 final scheduler posture]]
 - [[raw/security-reviews/2026-05-02-node-helper-dependency-audit|2026-05-02 Node helper dependency audit baseline]]
@@ -40,6 +47,10 @@ Pump.fun tokenized-agent payments are AgentAscend's current marketplace payment 
 - [[Launch Readiness]]
 - [[current-project-state|Current Project State]]
 - [[Solana Integration]]
+
+## Notes
+- Pump.fun route/helper behavior was unchanged by the legacy payment↔grant linkage hardening deployment.
+- Do not create payment intents or call verify from documentation/current-state cleanup.
 
 ## Superseded notes
 - The 2026-05-03 partial/no-response canary is superseded by the later PASS archive.

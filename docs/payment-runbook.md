@@ -53,9 +53,7 @@ No-auth smoke expectation:
 - Active paid pages do not use legacy `PaymentRequiredModal` for Pump.fun paid flows.
 - No `verifyResponse.success` or old `/payments/verify` unlock path in active paid route bundles.
 - No localStorage-based paid/access source of truth.
-- Production CSP includes browser RPC origins:
-  - `https://rpc.solanatracker.io`
-  - `wss://rpc.solanatracker.io`
+- Production CSP includes the approved public browser RPC/WSS origins; do not paste private RPC URLs into this runbook.
 
 ## What must never happen
 - Do not ask users to paste private keys or seed phrases.
@@ -90,6 +88,28 @@ Remaining risks:
 - `getTransaction` currently uses `maxSupportedTransactionVersion: 0`.
 - A future owner-approved controlled payment regression should verify deployed acceptance of a real valid Pump.fun payment and rejection of replay/wrong-signature cases.
 - Node dependency vulnerabilities remain for a separate dependency-audit phase.
+
+## Payment↔grant linkage hardening status — 2026-05-13
+Status: deployed PASS.
+
+Commit: `7cc1c6a986e1e2a1896b5e8e5b62b36917bccc70` (`backend: harden payment grant linkage`).
+
+What changed for future successful legacy `/payments/verify`:
+- Completed `payments` rows now carry `intent_reference`, `verification_status = "verified"`, `updated_at`, and `verified_at`.
+- Matching `payment_intents` rows are marked completed/verified with `tx_signature`, `completed_at`, and `updated_at` while preserving existing `consumed_at`.
+- Existing legacy access-grant creation already carries `payment_id`, `intent_reference`, and `source = legacy_verify`.
+
+Deployment evidence:
+- Railway AgentAscend: SUCCESS.
+- Railway AgentAscend-Scheduler: SUCCESS.
+- Live `/health`: HTTP 200.
+- Live `/openapi.json`: HTTP 200 valid JSON with Pump.fun create/verify and admin evidence/aggregate routes present.
+- `/jobs/run-due` remains present from base API state and was not called.
+
+Boundaries:
+- Pump.fun payment route/helper behavior was not changed.
+- No production backfill was performed.
+- Historical null-heavy linkage rows, if any, remain audit-only unless future owner-approved cleanup occurs.
 
 ## Replay-index hardening status — 2026-05-02
 Status: PASS preflight / DDL not needed now.

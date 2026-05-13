@@ -18,7 +18,7 @@ Known issues are current unresolved product, integration, or hardening risks. St
 - Superseded blockers retained for historical clarity.
 
 ## Current high-priority issues
-1. Payment↔grant ledger linkage/auditability needs investigation: 2026-05-11 read-only local DB/payment reports found completed payments without active grant linkage by `payment_id` and active grants null-heavy for `payment_id`/`intent_reference`. Treat as a launch-risk investigation until production-vs-local scope, backfill path, and forward invariants are verified.
+1. Historical/null-heavy payment↔grant linkage rows, if any, remain audit-only; future-path linkage hardening is deployed and no production backfill was performed. Any cleanup/backfill requires future owner approval.
 2. v0 UI polish must continue to derive runtime truth from live backend Forge routes, Command Center, deployment events, tasks, outputs, executions, workflows, payment/access truth, and not stale placeholders.
 3. Workflow builder remains partially live: owner-isolation passed, but node configuration/labels and richer run-history detail still need product polish; full visual graph editing remains later.
 4. localStorage must not grant paid access, marketplace ownership/install, payment verification, auth bypass, production settings authority, Agent card metrics, workflow ownership, graph state, or runtime status.
@@ -31,6 +31,7 @@ Known issues are current unresolved product, integration, or hardening risks. St
 - HSTS absent: superseded by live HSTS/security-header checks.
 - Replay-index migration pending: superseded by preflight PASS / DDL not needed now.
 - Exact `tx_signature` binding future work: superseded by deployed hardening.
+- Future-path payment↔grant linkage implementation pending: superseded by deployed commit `7cc1c6a986e1e2a1896b5e8e5b62b36917bccc70`; historical repair remains proposal-only.
 - Controlled Pump.fun payment regression pending/partial: superseded by 2026-05-03 PASS archive.
 - Forge routes not live: superseded by live OpenAPI evidence.
 - Core logged-in runtime loop blocked: superseded by owner-assisted QA and Hermes 2026-05-11 full signed-in functional UX PASS WITH CAVEATS.
@@ -52,6 +53,7 @@ Known issues are current unresolved product, integration, or hardening risks. St
 - [[raw/frontend-qa/2026-05-11-full-signed-in-functional-ux-qa-pass|2026-05-11 full signed-in functional UX QA PASS WITH CAVEATS]]
 - [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa|2026-05-09 workflow-builder owner-isolation QA PASS]]
 - [[raw/launch-evidence/2026-05-03-pumpfun-controlled-payment-regression-pass|2026-05-03 controlled Pump.fun payment regression PASS]]
+- [[raw/security-reviews/2026-05-12-payment-grant-linkage-tdd-report|2026-05-12 payment↔grant linkage TDD and deployment PASS]]
 - [[raw/security-reviews/2026-05-02-replay-index-preflight|2026-05-02 replay-index preflight PASS / DDL not needed]]
 
 ## Relationships
