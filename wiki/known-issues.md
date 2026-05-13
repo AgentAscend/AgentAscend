@@ -19,7 +19,7 @@ Known issues are current unresolved product, integration, or hardening risks. St
 
 ## Current high-priority issues
 1. Historical/null-heavy payment↔grant linkage rows, if any, remain audit-only; future-path linkage hardening is deployed and no production backfill was performed. Any cleanup/backfill requires future owner approval.
-2. v0 UI polish must continue to derive runtime truth from live backend Forge routes, Command Center, deployment events, tasks, outputs, executions, workflows, payment/access truth, and not stale placeholders.
+2. v0 UI polish must continue to derive runtime truth from live backend Forge routes, Command Center, deployment events, tasks, outputs, executions, workflows, payment/access truth, and not stale placeholders. Output Library search/preview basics are live and browser-QA verified; do not reintroduce fake export/load-more/search authority.
 3. Workflow builder remains partially live: owner-isolation passed, but node configuration/labels and richer run-history detail still need product polish; full visual graph editing remains later.
 4. localStorage must not grant paid access, marketplace ownership/install, payment verification, auth bypass, production settings authority, Agent card metrics, workflow ownership, graph state, or runtime status.
 5. Continue watching for stale user-facing `Backend Required` copy in live app advanced/preview surfaces.
@@ -28,13 +28,14 @@ Known issues are current unresolved product, integration, or hardening risks. St
 8. Git repository is diverged/noisy (`main` ahead/behind `origin/main` observed 8/8 on 2026-05-12); no push/deploy until reconciliation scope is explicit.
 
 ## Superseded / no longer current blockers
+- Output search/export/bulk UX not live: superseded by 2026-05-13 live Output Library QA PASS WITH CAVEATS; backend listing, local loaded-list search copy, disabled unsupported Export All/Load More, and output preview are verified.
 - HSTS absent: superseded by live HSTS/security-header checks.
 - Replay-index migration pending: superseded by preflight PASS / DDL not needed now.
 - Exact `tx_signature` binding future work: superseded by deployed hardening.
 - Future-path payment↔grant linkage implementation pending: superseded by deployed commit `7cc1c6a986e1e2a1896b5e8e5b62b36917bccc70`; historical repair remains proposal-only.
 - Controlled Pump.fun payment regression pending/partial: superseded by 2026-05-03 PASS archive.
 - Forge routes not live: superseded by live OpenAPI evidence.
-- Core logged-in runtime loop blocked: superseded by owner-assisted QA and Hermes 2026-05-11 full signed-in functional UX PASS WITH CAVEATS.
+- Core logged-in runtime loop blocked: superseded by owner-assisted QA and Hermes 2026-05-13 live Output Library/runtime QA PASS WITH CAVEATS.
 - Workflow auth/ownership privacy blocker: superseded by live workflow owner-isolation QA PASS archived at [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa]].
 - Task queue worker disabled: superseded by audited enablement.
 - Telegram auto-send risk: superseded by report-only/no-send default, though outbound sends still need owner approval.
@@ -46,6 +47,7 @@ Known issues are current unresolved product, integration, or hardening risks. St
 - Do not treat local payment/access findings as production facts until scope is verified.
 
 ## Recent Evidence
+- [[raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats|2026-05-13 live Output Library and runtime QA PASS WITH CAVEATS]]
 - [[raw/system-cleanup/2026-05-12-project-cleanup-cronjob-review|2026-05-12 project cleanup and cronjob review]]
 - [[raw/cronjob-retirement/2026-05-12-hermes-paused-job-cleanup|2026-05-12 Hermes paused cronjob cleanup]]
 - [[raw/db-integrity/2026-05-11|2026-05-11 database integrity check]]

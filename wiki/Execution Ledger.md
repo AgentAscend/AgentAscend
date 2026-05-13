@@ -11,6 +11,13 @@ aliases:
 ## Summary
 The Execution Ledger records runtime events, artifacts, execution summaries, and scheduler run history for AgentAscend operations.
 
+## Components
+- Task records.
+- Execution records.
+- Output records and artifacts.
+- Command Center aggregates.
+- Scheduler/runtime event history.
+
 ## Current status
 - Execution Ledger/Scheduler Ledger is production-enabled for the approved workload.
 - The task queue worker is enabled and can process queued production tasks during natural scheduler runs.
@@ -20,11 +27,15 @@ The Execution Ledger records runtime events, artifacts, execution summaries, and
 - Full autonomous runtime worker behavior and full visual workflow graph editing remain later product/runtime slices.
 
 ## Recent Evidence
+- [[raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats|2026-05-13 live Output Library and runtime QA PASS WITH CAVEATS]]
 - [[raw/scheduler-runtime-audits/2026-05-02-final-scheduler-posture|2026-05-02 final scheduler posture]]
 - [[raw/scheduler-runtime-audits/2026-05-02-task-worker-enablement|2026-05-02 task worker enablement canary]]
 - Commit `26aa8ab` live OpenAPI verification for deployment events.
 - Commit `34a8c21` Command Center backend slice.
 - [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa|2026-05-09 workflow owner-isolation QA PASS]]
+
+## Notes
+Execution artifact and output previews must remain sanitized in docs and UI reporting; do not archive raw task body/output or raw metadata/payload JSON.
 
 ## Relationships
 - [[scheduler|Scheduler]]
