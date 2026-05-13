@@ -1,7 +1,7 @@
 # AgentAscend MEMORY.md
 
 ## Current operating state — verified 2026-05-13
-AgentAscend is a crypto-native AI agent platform and marketplace. The backend is the source of truth for payment, access, marketplace entitlements, scheduler state, executions, tasks, outputs, agents, workflows, and user-owned data. Runtime-worker backend is live, the runtime-aware frontend/source audit passed, workflow ownership hardening is live, and full signed-in functional UX QA on 2026-05-11 verified the core loop: Ascend Forge agent creation → Run Agent → Task → Execution → Output → UI/dashboard refresh. Frontend/v0 must display backend truth and must not use localStorage as authority for paid unlocks, access, ownership, settings, payments, marketplace installs, agent metrics, workflow ownership, or runtime status.
+AgentAscend is a crypto-native AI agent platform and marketplace. The backend is the source of truth for payment, access, marketplace entitlements, scheduler state, executions, tasks, outputs, agents, workflows, and user-owned data. Runtime-worker backend is live, the runtime-aware frontend/source audit passed, workflow ownership hardening is live, and 2026-05-13 live Playwright QA verified the Output Library UX patch plus the signed-in core loop: throwaway signup → Ascend Forge create → Run Agent → Task → Execution → Output → Output preview. Frontend/v0 must display backend truth and must not use localStorage as authority for paid unlocks, access, ownership, settings, payments, marketplace installs, agent metrics, workflow ownership, or runtime status.
 
 ## Verified production baseline
 - Git branch: `main`; local main is diverged from `origin/main` and must not be pushed without explicit reconciliation/scope review.
@@ -15,7 +15,7 @@ After every AgentAscend deploy, Hermes must run the matching post-deploy QA chec
 
 ## Current product evidence
 - 2026-05-11 standing Vercel/frontend post-deploy QA PASS: live routes, CSP/security headers, Solana RPC/WSS, API health/OpenAPI, no-auth private-read guards, and deployed bundle markers passed.
-- 2026-05-11 full signed-in functional UX QA PASS WITH CAVEATS: throwaway account created, Ascend Forge create worked, Run Agent worked, backend showed 1 agent/1 task/1 execution/1 output, UI reflected Tasks 1 / Success 100% / Active and output/execution/task records.
+- 2026-05-13 live Output Library + signed-in runtime QA PASS WITH CAVEATS: local Playwright no-sandbox harness verified public/app routes, throwaway signup, Ascend Forge create, Run Agent from agent-card menu, backend 1 agent/1 task/1 execution/1 output, Output Library local search copy, disabled Export All/Load More, and backend output preview. Three throwaway accounts/agents and two task/execution/output sets remain in production; do not delete without separate owner-approved cleanup.
 - Workflow builder owner-isolation QA PASS remains current: User A create/save/read/run works; User B list exclusion and direct cross-user graph/run/runs access are blocked.
 - Pump.fun payment flow remains separate from frontend polish; do not touch wallet/payment flows during routine UI/runtime polishing.
 
@@ -35,7 +35,7 @@ After every AgentAscend deploy, Hermes must run the matching post-deploy QA chec
 Enabled/audited production scheduler jobs include backend health, integration drift, wiki consistency, TODO/FIXME scan, payment route audit, failed-payment replay review, access-grant integrity check, task queue worker, git status summary, and Telegram status summary. `default-roadmap-review` remains disabled/manual because it is premium/strategy-gated. Hermes cronjobs are separate from AgentAscend DB scheduler jobs; keep report-only defaults and do not send external messages or run risky jobs unless explicitly approved.
 
 ## Current next recommended phases
-1. Return to frontend/product polish: output search/export/bulk UX, richer workflow run-history/runtime detail, and deployment events/log-streaming UX.
+1. Continue frontend/product polish: deployment events/log-streaming UX, richer workflow run-history/runtime detail, settings/token/community polish, and optional throwaway QA cleanup plan only if owner approves production cleanup.
 2. Keep historical payment↔grant linkage repair/backfill proposal-only unless owner-approved after sanitized aggregate preflight.
 3. Add remaining backend gap slices one at a time only when frontend polish proves a real missing endpoint.
 4. Continue knowledge/wiki/Obsidian cleanup in small batches; keep routine generated cron reports out of git noise unless intentionally archived.

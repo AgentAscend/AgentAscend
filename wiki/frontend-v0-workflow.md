@@ -11,8 +11,14 @@ aliases:
 ## Summary
 The frontend is managed through v0/Vercel iterations. Current work should be patch-only, backend-truth-first, and verified from fresh ZIP extraction plus live bundle/API checks.
 
+## Components
+- v0/Next.js frontend source and ZIP exports.
+- Live Vercel deployment at `https://www.agentascend.ai`.
+- Backend API contract from live OpenAPI.
+- Playwright QA harness at `/tmp/agentascend-browser-qa/`.
+
 ## Current frontend/product status
-Owner-assisted logged-in QA has passed for the verified runtime loop: Agent → Run Agent → Task → Execution → Output. Workflow-builder owner-isolation QA passed on 2026-05-09: the backend is owner-scoped, User A create/save/read/run works, User B cross-user access is blocked, and the graph payload boundary stayed `{ nodes: [...] }`. Frontend no longer appears blocked on backend integration for tasks, outputs, executions, or workflow ownership basics.
+Owner-assisted logged-in QA has passed for the verified runtime loop: Agent → Run Agent → Task → Execution → Output. Workflow-builder owner-isolation QA passed on 2026-05-09: the backend is owner-scoped, User A create/save/read/run works, User B cross-user access is blocked, and the graph payload boundary stayed `{ nodes: [...] }`. Frontend no longer appears blocked on backend integration for tasks, outputs, executions, Output Library preview/search basics, or workflow ownership basics.
 
 ## Current focus pages
 - `/app/overview`
@@ -54,6 +60,9 @@ Live OpenAPI includes Forge capability/templates, agent definitions, run/deploy/
 - Workflow owner-isolation QA: User A create/save/read/run, User B list exclusion, 403 on cross-user graph/save/run/runs, and graph save shape `{ nodes: [...] }`.
 - Safe Playwright route/render smoke when available.
 
+## Notes
+Patch-only frontend work must preserve backend authority, avoid fake local state, and separate source-candidate PASS from live deployment QA PASS.
+
 ## Relationships
 - [[current-project-state|Current Project State]]
 - [[Launch Readiness]]
@@ -61,3 +70,6 @@ Live OpenAPI includes Forge capability/templates, agent definitions, run/deploy/
 - [[Payment Access Control]]
 - [[known-issues|Known Issues]]
 - [[Roadmap]]
+
+## Recent Evidence
+- [[raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats|2026-05-13 live Output Library and runtime QA PASS WITH CAVEATS]]

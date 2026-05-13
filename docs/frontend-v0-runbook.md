@@ -11,7 +11,20 @@ Keep v0/Vercel frontend work aligned with the live backend contract and prevent 
   - `/app/marketplace`
   - `/app/executions`
 - Live routes returned HTTP 200 during read-only audit.
+- Latest live Playwright QA PASS WITH CAVEATS: `raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats.md`. It verified throwaway signup → Ascend Forge create → Run Agent → Task → Execution → Output → Output preview plus Output Library search/preview/disabled unsupported actions. Payment, wallet, and Pump.fun were intentionally not tested.
 
+
+## Output Library release gate
+An Output Library source or live deployment passes this gate only when:
+- `/app/outputs` renders backend outputs from `GET /outputs` and never falls back to fake/demo/localStorage output authority.
+- Search is clearly local over loaded backend outputs unless the live OpenAPI adds server-side search. Required copy: “Search filters loaded backend outputs locally.”
+- Unsupported bulk export, share, delete, and pagination/load-more controls are disabled or clearly coming later unless backend endpoints are added.
+- Top-level Export All must be disabled while backend bulk export is absent.
+- Preview uses backend detail data from `GET /outputs/{output_id}`.
+- Download URL is requested on demand from `GET /outputs/{output_id}/download-url`; no fake download URL is generated.
+- Payment, Pump.fun verify, scheduler, `/jobs/run-due`, and frontend admin endpoints are not called during Output Library QA.
+
+Latest archived PASS WITH CAVEATS: `raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats.md`. Throwaway QA resources remain in production and require a separate owner-approved cleanup plan before deletion.
 
 ## Workflow builder owner-isolation gate
 Workflow owner-isolation QA passed on 2026-05-09 and is archived at `raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa.md`. Future v0 workflow work must preserve the backend graph payload boundary `{ nodes: [...] }`; do not present `edges`, branching, ordered steps, output schemas, or full visual graph editing as live until backend OpenAPI supports those fields/features. Owner-isolation regression checks should verify User A create/save/read/run, User B list exclusion, and 403 on cross-user graph/save/run/runs probes.
