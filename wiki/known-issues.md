@@ -11,25 +11,48 @@ aliases:
 ## Summary
 Known issues are current unresolved product, integration, or hardening risks. Stale phase blockers should be marked superseded and should not be treated as current launch blockers.
 
+## Components
+- Payment/access auditability risks.
+- Frontend/runtime truth and polish risks.
+- Scheduler, cronjob, dependency, and git hygiene risks.
+- Superseded blockers retained for historical clarity.
+
 ## Current high-priority issues
-1. Frontend product polish remains the main bottleneck now that the runtime loop is live and owner-verified.
-2. Full visual workflow graph editing, branching, output schemas, output UX, task detail, execution detail, deployment events/log UX, settings persistence, token/community polish remain incomplete; owner-isolation for basic workflow create/save/read/run is verified.
-3. localStorage must not grant paid access, marketplace ownership/install, workflow ownership, graph state, payment verification, auth bypass, or production settings authority.
-4. Remaining Pump.fun/Solana runtime dependency advisories are accepted/monitored, not eliminated.
-5. Legacy Telegram Hermes cronjobs remain enabled but are high-risk until converted/paused/removed with owner approval.
-6. Original local `main` is diverged from `origin/main`; use clean worktrees until reconciled.
+1. Payment↔grant ledger linkage/auditability needs investigation: 2026-05-11 read-only local DB/payment reports found completed payments without active grant linkage by `payment_id` and active grants null-heavy for `payment_id`/`intent_reference`. Treat as a launch-risk investigation until production-vs-local scope, backfill path, and forward invariants are verified.
+2. v0 UI polish must continue to derive runtime truth from live backend Forge routes, Command Center, deployment events, tasks, outputs, executions, workflows, payment/access truth, and not stale placeholders.
+3. Workflow builder remains partially live: owner-isolation passed, but node configuration/labels and richer run-history detail still need product polish; full visual graph editing remains later.
+4. localStorage must not grant paid access, marketplace ownership/install, payment verification, auth bypass, production settings authority, Agent card metrics, workflow ownership, graph state, or runtime status.
+5. Continue watching for stale user-facing `Backend Required` copy in live app advanced/preview surfaces.
+6. Remaining Pump.fun/Solana runtime dependency advisories are accepted/monitored, not eliminated.
+7. Multi-agent runtime architecture is still planning-only.
+8. Git repository is diverged/noisy (`main` ahead/behind `origin/main` observed 8/8 on 2026-05-12); no push/deploy until reconciliation scope is explicit.
 
 ## Superseded / no longer current blockers
 - HSTS absent: superseded by live HSTS/security-header checks.
 - Replay-index migration pending: superseded by preflight PASS / DDL not needed now.
 - Exact `tx_signature` binding future work: superseded by deployed hardening.
 - Controlled Pump.fun payment regression pending/partial: superseded by 2026-05-03 PASS archive.
-- Forge routes not live: superseded by live OpenAPI.
-- Tasks/outputs/executions backend-required blocker: superseded by runtime worker and owner-verified frontend loop.
-- Workflow owner-isolation unverified: superseded by 2026-05-09 live QA PASS archived at [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa]].
+- Forge routes not live: superseded by live OpenAPI evidence.
+- Core logged-in runtime loop blocked: superseded by owner-assisted QA and Hermes 2026-05-11 full signed-in functional UX PASS WITH CAVEATS.
+- Workflow auth/ownership privacy blocker: superseded by live workflow owner-isolation QA PASS archived at [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa]].
 - Task queue worker disabled: superseded by audited enablement.
 - Telegram auto-send risk: superseded by report-only/no-send default, though outbound sends still need owner approval.
-- Old failed deploy notes: superseded by later successful Railway deployments.
+- Old failed deploy baselines: superseded by later successful deploys and live health/OpenAPI checks.
+- Paused Hermes documentation/strategy/roadmap cronjob errors: superseded by 2026-05-12 retirement/removal and safer active report-only jobs.
+
+## Notes
+- Keep unresolved items evidence-linked and avoid resurrecting superseded launch blockers.
+- Do not treat local payment/access findings as production facts until scope is verified.
+
+## Recent Evidence
+- [[raw/system-cleanup/2026-05-12-project-cleanup-cronjob-review|2026-05-12 project cleanup and cronjob review]]
+- [[raw/cronjob-retirement/2026-05-12-hermes-paused-job-cleanup|2026-05-12 Hermes paused cronjob cleanup]]
+- [[raw/db-integrity/2026-05-11|2026-05-11 database integrity check]]
+- [[raw/payment-audits/2026-05-11|2026-05-11 payment system audit]]
+- [[raw/frontend-qa/2026-05-11-full-signed-in-functional-ux-qa-pass|2026-05-11 full signed-in functional UX QA PASS WITH CAVEATS]]
+- [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa|2026-05-09 workflow-builder owner-isolation QA PASS]]
+- [[raw/launch-evidence/2026-05-03-pumpfun-controlled-payment-regression-pass|2026-05-03 controlled Pump.fun payment regression PASS]]
+- [[raw/security-reviews/2026-05-02-replay-index-preflight|2026-05-02 replay-index preflight PASS / DDL not needed]]
 
 ## Relationships
 - [[current-project-state|Current Project State]]

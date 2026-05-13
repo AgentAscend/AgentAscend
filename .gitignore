@@ -22,3 +22,6 @@ raw/documentation-gaps/*.md
 raw/mvp-readiness/*.md
 raw/local-dev-checks/*.md
 raw/memory-maintenance/*.md
+raw/automation-governance/*swarm-*-report.md
+raw/automation-governance/*swarm-cron-smoke.md
+raw/automation-governance/*weekly-system-hygiene-cronjob-audit.md

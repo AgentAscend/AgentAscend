@@ -8,42 +8,36 @@ aliases:
 # Current Project State
 
 ## Summary
-AgentAscend is in a live runtime/product-polish posture. Payment/access regression, Forge/backend routes, runtime worker, execution/task/output loop, and post-deploy QA are live. The current bottleneck is frontend product polish and workflow/output UX against backend truth.
+AgentAscend is in a soft-launch/product-integration posture. The backend remains the source of truth for payment/access/runtime state. The core logged-in runtime loop is now verified end-to-end in the deployed frontend; the next launch-risk investigation is payment↔grant ledger linkage/auditability, followed by continued runtime UI polish.
 
 ## Components
-- Backend/API: Railway FastAPI at `https://api.agentascend.ai`.
-- Frontend: v0/Next.js on Vercel at `https://www.agentascend.ai`.
-- Database: Railway Postgres.
-- Scheduler: separate Railway `AgentAscend-Scheduler` worker with DB-backed jobs.
-- Automation: Hermes cronjobs and AgentAscend scheduler jobs are separate systems.
-- Knowledge system: `MEMORY.md`, `raw/`, `wiki/`, `docs/`, `learning/`, `skills/`, `system/`.
+- Backend: FastAPI on Railway at the public API domain.
+- Frontend: v0/Next.js on Vercel.
+- Database: Railway Postgres for production persistence; local SQLite may still appear in report-only scheduler/cron audits.
+- Scheduler: AgentAscend DB scheduler under systemd locally and Railway scheduler worker in production.
+- Knowledge system: `MEMORY.md`, `raw/`, `wiki/`, `docs/`, `learning/`, `skills/`, and Obsidian `.obsidian/` metadata.
 
-## Current production status — verified 2026-05-07
-- `origin/main`: `712c05e8d1c1b9c05bae5d8723713ff80b5c5567`.
-- Railway `AgentAscend`: SUCCESS at commit `712c05e`, deployment `ddf9b9a6`.
-- Railway `AgentAscend-Scheduler`: SUCCESS at commit `712c05e`, deployment `c2f213a7`.
-- `/health`: HTTP 200.
-- `/openapi.json`: HTTP 200 valid JSON.
-- API security headers: HSTS, CSP, Permissions-Policy, Referrer-Policy, X-Content-Type-Options, X-Frame-Options present.
-- Live OpenAPI includes Pump.fun create/verify, Forge capabilities/templates, agent definitions/run/deploy, workflow run, Command Center, tasks, outputs, executions, deployment events, and admin task-runtime aggregate routes.
+## Current production/status baseline — verified 2026-05-12
+- Live frontend domain: `https://www.agentascend.ai`.
+- Live API health: `GET https://api.agentascend.ai/health` returns HTTP 200 `{"status":"ok"}` in current checks.
+- Live frontend post-deploy QA on 2026-05-11 passed route/header/CSP/Solana RPC/WSS/OpenAPI/private-read/bundle gates.
+- Full signed-in functional UX QA on 2026-05-11 passed with caveats using a throwaway QA account: Ascend Forge create → Run Agent → Task → Execution → Output → UI/dashboard refresh.
+- Git safety: local `main` is diverged from `origin/main` (`ahead 8 / behind 8` observed 2026-05-12). Do not push/deploy without explicit reconciliation.
 
 ## Product status
-- Runtime worker is live.
-- Runtime-aware frontend loop is owner-verified: Agent → Run Agent → Task → Execution → Output.
-- Post-deploy QA protocol is active and mandatory before final PASS after every deploy.
-- Local Playwright harness is available at `/tmp/agentascend-browser-qa/agentascend-browser-qa.js` for safe frontend route/render smoke.
-- Replay-index DDL is not needed because equivalent protections already exist.
-- Payment flow works and controlled Pump.fun regression passed.
-- Workflow builder owner-isolation is verified live with throwaway users: workflow creation, graph save/read, run/runs, and cross-user denial passed. Evidence: [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa]].
-- Telegram sends remain not approved by default.
+- Runtime-worker backend is live.
+- Runtime-aware frontend/source audit passed.
+- Core runtime loop is verified in live deployed frontend: agent create, run, task, execution, output, dashboard/agents refresh.
+- Workflow auth ownership backend is live; workflow-builder owner-isolation QA passed.
+- `/app/workflows` partially-live baseline: create/save/read/run works for owner; cross-user access is blocked; graph save respects `{ nodes: [...] }`; full visual graph/editor features remain later.
+- Pump.fun marketplace payment regression passed separately; keep payment/wallet flow separate from routine UI polish.
+- Frontend no longer appears blocked on backend integration for tasks, outputs, executions, agent creation/run, or workflow ownership basics.
+- Remaining product work: workflow node configuration editing/labels, richer run-history detail, output search/export/bulk UX, deployment events/log-streaming UX, task/execution/output detail UX, and workflow execution UX.
 
-## Remaining backend/product gaps
-- Full visual workflow graph builder; owner-scoped create/save/read/run works, but node configuration/labels and richer run-history detail remain product polish.
-- Richer output search/export/bulk actions.
-- Task and execution detail UX.
-- Deployment scale/rollback/log streaming.
-- Settings persistence polish.
-- Token/community UX as future slices.
+## Current launch-risk watch
+- 2026-05-11 read-only local DB/payment reports flagged completed payments without active grant linkage by `payment_id` and null-heavy grant linkage fields.
+- Treat this as a payment/access auditability investigation until production-vs-local scope is confirmed and a TDD forward-invariant/backfill plan is approved.
+- No production payment/access/DB mutation should happen without explicit owner approval.
 
 ## Relationships
 - [[AgentAscend]]
@@ -52,11 +46,27 @@ AgentAscend is in a live runtime/product-polish posture. Payment/access regressi
 - [[Payment Access Control]]
 - [[scheduler|Scheduler]]
 - [[Cronjobs]]
-- [[Hermes]]
 - [[Execution Ledger]]
 - [[frontend-v0-workflow|Frontend v0 Workflow]]
 - [[known-issues|Known Issues]]
 - [[Roadmap]]
 
+## Recent Evidence
+- [[raw/frontend-qa/2026-05-11-full-signed-in-functional-ux-qa-pass|2026-05-11 full signed-in functional UX QA PASS WITH CAVEATS]]
+- [[raw/system-cleanup/2026-05-12-project-cleanup-cronjob-review|2026-05-12 project cleanup and cronjob review]]
+- [[raw/cronjob-retirement/2026-05-12-hermes-paused-job-cleanup|2026-05-12 Hermes paused cronjob cleanup]]
+- [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa|2026-05-09 workflow-builder owner-isolation QA PASS]]
+- [[raw/launch-evidence/2026-05-03-pumpfun-controlled-payment-regression-pass|2026-05-03 controlled Pump.fun payment regression PASS]]
+- [[raw/security-reviews/2026-05-02-replay-index-preflight|2026-05-02 replay-index preflight PASS / DDL not needed]]
+
 ## Notes
-Next product focus: workflow node configuration/labels, richer run-history details, output search/export/bulk UX, task/execution detail UX, deployment events/log-streaming UX, and settings/community polish. Keep Pump.fun separate unless explicitly scoped.
+- Keep launch-risk findings scoped: local read-only payment/access findings are not production facts until verified.
+- Keep generated recurring reports out of git unless intentionally archived as evidence.
+- Do not push or deploy from the diverged local `main` line.
+
+## Next actions
+1. Payment↔grant linkage investigation and local TDD hardening plan; verify production-vs-local scope before any data repair.
+2. Workflow node configuration labels/editing while preserving backend `{ nodes: [...] }` graph boundary.
+3. Richer run-history/runtime detail and output search/export/bulk UX.
+4. Deployment events/log-streaming UX.
+5. Keep recurring generated reports out of git noise unless intentionally archived.
