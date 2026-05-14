@@ -894,21 +894,60 @@ def update_avatar(payload: AvatarUpdateRequest, authorization: str | None = Head
 
 
 @router.get("/search", response_model=SearchResponse)
-def global_search(q: str = ""):
+def global_search(q: str = "", authorization: str | None = Header(default=None)):
     query = (q or "").strip().lower()
     if not query:
         return {"status": "ok", "query": "", "results": []}
 
+    actor_user_id: str | None = None
+    if authorization:
+        auth = resolve_session(authorization)
+        actor_user_id = auth["user"]["user_id"]
+
     results: list[SearchResult] = []
     with get_connection() as conn:
-        for row in conn.execute("SELECT agent_id, name, category FROM agents WHERE lower(name) LIKE ? LIMIT 10", (f"%{query}%",)):
+        agent_params: tuple[str, ...]
+        if actor_user_id:
+            agent_where = "lower(name) LIKE ? AND (owner_user_id=? OR visibility='public')"
+            agent_params = (f"%{query}%", actor_user_id)
+        else:
+            agent_where = "lower(name) LIKE ? AND visibility='public'"
+            agent_params = (f"%{query}%",)
+        for row in conn.execute(f"SELECT agent_id, name, category FROM agents WHERE {agent_where} LIMIT 10", agent_params):
             results.append(SearchResult(result_type="agent", result_id=row["agent_id"], title=row["name"], subtitle=row["category"]))
 
-        for row in conn.execute("SELECT workflow_id, name, status FROM workflows WHERE lower(name) LIKE ? LIMIT 10", (f"%{query}%",)):
-            results.append(SearchResult(result_type="workflow", result_id=row["workflow_id"], title=row["name"], subtitle=row["status"]))
+        if actor_user_id:
+            for row in conn.execute(
+                "SELECT workflow_id, name, status FROM workflows WHERE lower(name) LIKE ? AND owner_user_id=? LIMIT 10",
+                (f"%{query}%", actor_user_id),
+            ):
+                results.append(SearchResult(result_type="workflow", result_id=row["workflow_id"], title=row["name"], subtitle=row["status"]))
 
-        for row in conn.execute("SELECT deployment_id, name, environment FROM deployments WHERE lower(name) LIKE ? LIMIT 10", (f"%{query}%",)):
-            results.append(SearchResult(result_type="deployment", result_id=row["deployment_id"], title=row["name"], subtitle=row["environment"]))
+            for row in conn.execute(
+                """
+                SELECT deployment_id, name, environment
+                FROM deployments d
+                WHERE lower(name) LIKE ?
+                  AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM agents a
+                        WHERE a.deployment_id=d.deployment_id
+                          AND a.owner_user_id=?
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM audit_events ae
+                        WHERE ae.target_type='deployment'
+                          AND ae.target_id=d.deployment_id
+                          AND ae.actor_user_id=?
+                    )
+                  )
+                LIMIT 10
+                """,
+                (f"%{query}%", actor_user_id, actor_user_id),
+            ):
+                results.append(SearchResult(result_type="deployment", result_id=row["deployment_id"], title=row["name"], subtitle=row["environment"]))
 
     return {"status": "ok", "query": q, "results": results[:20]}
 

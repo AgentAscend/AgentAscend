@@ -427,3 +427,64 @@ def test_forge_agent_deploy_creates_agent_scoped_deployment(client: TestClient):
     agent = detail.json()["agent"]
     assert agent["deployment_id"] == deployment_id
     assert agent["deployment_environment"] == "production"
+
+
+def test_global_search_does_not_expose_private_user_records(client: TestClient):
+    _owner_id, owner_token = _signup(client, "search-private-owner@example.com")
+    _other_id, other_token = _signup(client, "search-private-other@example.com")
+    marker = "search-private-marker"
+
+    private_agent = client.post(
+        "/agents",
+        headers=_auth_header(owner_token),
+        json={"name": f"{marker} agent", "category": "QA", "description": "private", "visibility": "private"},
+    )
+    _assert_status(private_agent, 200)
+
+    public_agent = client.post(
+        "/agents",
+        headers=_auth_header(owner_token),
+        json={"name": f"{marker} public", "category": "QA", "description": "public", "visibility": "public"},
+    )
+    _assert_status(public_agent, 200)
+
+    workflow = client.post(
+        "/workflows",
+        headers=_auth_header(owner_token),
+        json={"name": f"{marker} workflow", "status": "draft"},
+    )
+    _assert_status(workflow, 200)
+
+    deployment = client.post(
+        "/deployments",
+        headers=_auth_header(owner_token),
+        json={"name": f"{marker} deployment", "environment": "qa", "region": "us-east", "status": "running"},
+    )
+    _assert_status(deployment, 200)
+
+    owner_results = client.get(f"/search?q={marker}", headers=_auth_header(owner_token))
+    other_results = client.get(f"/search?q={marker}", headers=_auth_header(other_token))
+    unauth_results = client.get(f"/search?q={marker}")
+
+    _assert_status(owner_results, 200)
+    _assert_status(other_results, 200)
+    _assert_status(unauth_results, 200)
+
+    owner_blob = str(owner_results.json())
+    other_blob = str(other_results.json())
+    unauth_blob = str(unauth_results.json())
+
+    assert f"{marker} agent" in owner_blob
+    assert f"{marker} workflow" in owner_blob
+    assert f"{marker} deployment" in owner_blob
+    assert f"{marker} public" in owner_blob
+
+    assert f"{marker} agent" not in other_blob
+    assert f"{marker} workflow" not in other_blob
+    assert f"{marker} deployment" not in other_blob
+    assert f"{marker} public" in other_blob
+
+    assert f"{marker} agent" not in unauth_blob
+    assert f"{marker} workflow" not in unauth_blob
+    assert f"{marker} deployment" not in unauth_blob
+    assert f"{marker} public" in unauth_blob
