@@ -399,27 +399,45 @@ def act_on_agent(agent_id: str, payload: AgentActionRequest, authorization: str 
 
 
 @router.get("/deployments", response_model=DeploymentListResponse)
-def list_deployments():
+def list_deployments(authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
     with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT deployment_id, name, environment, status, region, agents_count, cpu_percent, memory_percent,
                    requests_per_day, created_at, updated_at
-            FROM deployments
+            FROM deployments d
+            WHERE EXISTS (
+                SELECT 1
+                FROM agents a
+                WHERE a.deployment_id=d.deployment_id
+                  AND a.owner_user_id=?
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM audit_events ae
+                WHERE ae.target_type='deployment'
+                  AND ae.target_id=d.deployment_id
+                  AND ae.actor_user_id=?
+            )
             ORDER BY updated_at DESC
-            """
+            """,
+            (actor, actor),
         ).fetchall()
 
     return {"status": "ok", "deployments": [DeploymentRecord(**_row_dict(r)) for r in rows]}
 
 
 @router.post("/deployments/{deployment_id}/actions", response_model=DeploymentActionResponse)
-def act_on_deployment(deployment_id: str, payload: DeploymentActionRequest):
+def act_on_deployment(
+    deployment_id: str,
+    payload: DeploymentActionRequest,
+    authorization: str | None = Header(default=None),
+):
+    actor = _require_user_id(authorization)
     next_status = "running" if payload.action in {"resume", "restart"} else "paused"
     with get_connection() as conn:
-        exists = conn.execute("SELECT 1 FROM deployments WHERE deployment_id=?", (deployment_id,)).fetchone()
-        if not exists:
-            fail(404, "not_found", "Deployment not found")
+        _require_deployment_owner(conn, deployment_id, actor)
 
         conn.execute(
             "UPDATE deployments SET status=?, updated_at=datetime('now') WHERE deployment_id=?",
@@ -440,6 +458,7 @@ def act_on_deployment(deployment_id: str, payload: DeploymentActionRequest):
             (deployment_id,),
         ).fetchone()
 
+    _audit(actor, f"deployment.{payload.action}", "deployment", deployment_id)
     return {"status": "ok", "deployment": DeploymentRecord(**_row_dict(row))}
 
 
@@ -1716,8 +1735,10 @@ def deployment_events(deployment_id: str, authorization: str | None = Header(def
 
 
 @router.get("/deployments/{deployment_id}")
-def get_deployment(deployment_id: str):
+def get_deployment(deployment_id: str, authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
     with get_connection() as conn:
+        _require_deployment_owner(conn, deployment_id, actor)
         row = conn.execute(
             """
             SELECT deployment_id, name, environment, status, region, agents_count, cpu_percent, memory_percent, requests_per_day, created_at, updated_at
@@ -1731,8 +1752,10 @@ def get_deployment(deployment_id: str):
 
 
 @router.get("/deployments/{deployment_id}/metrics")
-def deployment_metrics(deployment_id: str):
+def deployment_metrics(deployment_id: str, authorization: str | None = Header(default=None)):
+    actor = _require_user_id(authorization)
     with get_connection() as conn:
+        _require_deployment_owner(conn, deployment_id, actor)
         rows = conn.execute(
             """
             SELECT cpu_percent, memory_percent, p95_latency_ms, error_rate, recorded_at

@@ -74,6 +74,30 @@ def test_deployment_events_requires_auth(client: TestClient):
     _assert_status(response, 401)
 
 
+def test_deployment_list_requires_auth(client: TestClient):
+    response = client.get("/deployments")
+
+    _assert_status(response, 401)
+
+
+def test_deployment_detail_requires_auth(client: TestClient):
+    response = client.get("/deployments/dep_any")
+
+    _assert_status(response, 401)
+
+
+def test_deployment_metrics_requires_auth(client: TestClient):
+    response = client.get("/deployments/dep_any/metrics")
+
+    _assert_status(response, 401)
+
+
+def test_deployment_actions_require_auth(client: TestClient):
+    response = client.post("/deployments/dep_any/actions", json={"action": "pause"})
+
+    _assert_status(response, 401)
+
+
 def test_deployment_events_blocks_cross_user(client: TestClient):
     owner_user_id, _owner_token = _signup(client, "deploy-events-owner@example.com")
     _other_user_id, other_token = _signup(client, "deploy-events-other@example.com")
@@ -82,6 +106,86 @@ def test_deployment_events_blocks_cross_user(client: TestClient):
     response = client.get(f"/deployments/{deployment_id}/events", headers=_auth_header(other_token))
 
     _assert_status(response, 403)
+
+
+def test_deployment_list_is_scoped_to_authenticated_owner(client: TestClient):
+    owner_user_id, owner_token = _signup(client, "deploy-list-owner@example.com")
+    other_user_id, other_token = _signup(client, "deploy-list-other@example.com")
+    owner_deployment_id = _insert_owned_deployment_without_events(owner_user_id, "dep_owner_visible")
+    other_deployment_id = _insert_owned_deployment_without_events(other_user_id, "dep_other_visible")
+
+    owner_response = client.get("/deployments", headers=_auth_header(owner_token))
+    other_response = client.get("/deployments", headers=_auth_header(other_token))
+
+    _assert_status(owner_response, 200)
+    _assert_status(other_response, 200)
+    owner_ids = {deployment["deployment_id"] for deployment in owner_response.json()["deployments"]}
+    other_ids = {deployment["deployment_id"] for deployment in other_response.json()["deployments"]}
+    assert owner_deployment_id in owner_ids
+    assert other_deployment_id not in owner_ids
+    assert other_deployment_id in other_ids
+    assert owner_deployment_id not in other_ids
+
+
+def test_deployment_detail_blocks_cross_user(client: TestClient):
+    owner_user_id, _owner_token = _signup(client, "deploy-detail-owner@example.com")
+    _other_user_id, other_token = _signup(client, "deploy-detail-other@example.com")
+    deployment_id = _insert_owned_deployment_without_events(owner_user_id, "dep_detail_cross_user")
+
+    response = client.get(f"/deployments/{deployment_id}", headers=_auth_header(other_token))
+
+    _assert_status(response, 403)
+
+
+def test_deployment_metrics_blocks_cross_user(client: TestClient):
+    owner_user_id, _owner_token = _signup(client, "deploy-metrics-owner@example.com")
+    _other_user_id, other_token = _signup(client, "deploy-metrics-other@example.com")
+    deployment_id = _insert_owned_deployment_without_events(owner_user_id, "dep_metrics_cross_user")
+
+    response = client.get(f"/deployments/{deployment_id}/metrics", headers=_auth_header(other_token))
+
+    _assert_status(response, 403)
+
+
+def test_deployment_actions_block_cross_user_without_status_change(client: TestClient):
+    owner_user_id, owner_token = _signup(client, "deploy-action-owner@example.com")
+    _other_user_id, other_token = _signup(client, "deploy-action-other@example.com")
+    deployment_id = _insert_owned_deployment_without_events(owner_user_id, "dep_action_cross_user")
+
+    response = client.post(f"/deployments/{deployment_id}/actions", headers=_auth_header(other_token), json={"action": "pause"})
+    owner_read = client.get(f"/deployments/{deployment_id}", headers=_auth_header(owner_token))
+
+    _assert_status(response, 403)
+    _assert_status(owner_read, 200)
+    assert owner_read.json()["deployment"]["status"] == "running"
+
+
+def test_owner_can_pause_resume_restart_own_deployment(client: TestClient):
+    owner_user_id, token = _signup(client, "deploy-action-self@example.com")
+    deployment_id = _insert_owned_deployment_without_events(owner_user_id, "dep_action_owner")
+
+    for action, expected_status in [("pause", "paused"), ("resume", "running"), ("restart", "running")]:
+        response = client.post(f"/deployments/{deployment_id}/actions", headers=_auth_header(token), json={"action": action})
+
+        _assert_status(response, 200)
+        assert response.json()["deployment"]["status"] == expected_status
+
+
+def test_deployment_openapi_documents_auth_header_requirements(client: TestClient):
+    spec = client.get("/openapi.json").json()
+    required_operations = [
+        ("/deployments", "get"),
+        ("/deployments/{deployment_id}", "get"),
+        ("/deployments/{deployment_id}/metrics", "get"),
+        ("/deployments/{deployment_id}/actions", "post"),
+        ("/deployments/{deployment_id}/events", "get"),
+    ]
+
+    for path, method in required_operations:
+        parameters = spec["paths"][path][method].get("parameters", [])
+        authorization = [parameter for parameter in parameters if parameter.get("name") == "authorization"]
+        assert authorization, f"Missing authorization header parameter for {method.upper()} {path}"
+        assert authorization[0]["in"] == "header"
 
 
 def test_owned_deployment_with_no_events_returns_empty_list(client: TestClient):
