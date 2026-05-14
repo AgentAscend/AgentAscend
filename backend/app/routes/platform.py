@@ -1959,6 +1959,35 @@ def create_task(payload: TaskCreateInput, background_tasks: BackgroundTasks, aut
     return {"status": "ok", "task_id": task_id}
 
 
+def _require_task_owner(conn, task_id: str, actor_user_id: str, role: str | None = None):
+    task = conn.execute(
+        "SELECT task_id, user_id FROM tasks WHERE task_id=?",
+        (task_id,),
+    ).fetchone()
+    if not task:
+        fail(404, "not_found", "Task not found")
+    if task["user_id"] != actor_user_id and role != "admin":
+        fail(403, "forbidden", "Authenticated user cannot access another user's task")
+    return task
+
+
+def _require_output_owner(conn, output_id: str, actor_user_id: str, role: str | None = None):
+    output = conn.execute(
+        """
+        SELECT o.output_id, COALESCE(o.user_id, t.user_id) AS owner_user_id
+        FROM outputs o
+        LEFT JOIN tasks t ON t.task_id=o.task_id
+        WHERE o.output_id=?
+        """,
+        (output_id,),
+    ).fetchone()
+    if not output:
+        fail(404, "not_found", "Output not found")
+    if output["owner_user_id"] != actor_user_id and role != "admin":
+        fail(403, "forbidden", "Authenticated user cannot access another user's output")
+    return output
+
+
 @router.get("/tasks/{task_id}/execution", response_model=ExecutionDetailResponse)
 def get_task_execution(task_id: str, authorization: str | None = Header(default=None)):
     auth = resolve_session(authorization)
@@ -1976,8 +2005,11 @@ def get_task_execution(task_id: str, authorization: str | None = Header(default=
 
 
 @router.get("/tasks/{task_id}")
-def get_task(task_id: str):
+def get_task(task_id: str, authorization: str | None = Header(default=None)):
+    auth = resolve_session(authorization)
+    actor = auth["user"]
     with get_connection() as conn:
+        _require_task_owner(conn, task_id, actor["user_id"], actor.get("role"))
         row = conn.execute(
             "SELECT task_id, user_id, agent_id, type, title, status, priority, assigned_to, error_message, created_at, updated_at FROM tasks WHERE task_id=?",
             (task_id,),
@@ -1987,31 +2019,34 @@ def get_task(task_id: str):
     return {"status": "ok", "task": _row_dict(row)}
 
 
-def _set_task_status(task_id: str, new_status: str, actor: str, message: str):
+def _set_task_status(task_id: str, new_status: str, actor: dict, message: str):
+    actor_user_id = actor["user_id"]
     with get_connection() as conn:
-        exists = conn.execute("SELECT 1 FROM tasks WHERE task_id=?", (task_id,)).fetchone()
-        if not exists:
-            fail(404, "not_found", "Task not found")
+        _require_task_owner(conn, task_id, actor_user_id, actor.get("role"))
         conn.execute("UPDATE tasks SET status=?, error_message=NULL, updated_at=datetime('now') WHERE task_id=?", (new_status, task_id))
         conn.execute(
             "INSERT INTO task_logs(task_id, level, message, created_at) VALUES (?, 'info', ?, datetime('now'))",
             (task_id, message),
         )
         conn.commit()
-    _audit(actor, f"task.{new_status}", "task", task_id)
+    _audit(actor_user_id, f"task.{new_status}", "task", task_id)
 
 
 @router.post("/tasks/{task_id}/retry")
 def retry_task(task_id: str, authorization: str | None = Header(default=None)):
-    actor = _require_user_id(authorization)
-    _set_task_status(task_id, "queued", actor, f"Task retried by {actor}")
+    auth = resolve_session(authorization)
+    actor = auth["user"]
+    actor_user_id = actor["user_id"]
+    _set_task_status(task_id, "queued", actor, f"Task retried by {actor_user_id}")
     return {"status": "ok", "task_id": task_id, "new_status": "queued"}
 
 
 @router.post("/tasks/{task_id}/cancel")
 def cancel_task(task_id: str, authorization: str | None = Header(default=None)):
-    actor = _require_user_id(authorization)
-    _set_task_status(task_id, "failed", actor, f"Task cancelled by {actor}")
+    auth = resolve_session(authorization)
+    actor = auth["user"]
+    actor_user_id = actor["user_id"]
+    _set_task_status(task_id, "failed", actor, f"Task cancelled by {actor_user_id}")
     return {"status": "ok", "task_id": task_id, "new_status": "failed"}
 
 
@@ -2037,8 +2072,11 @@ def delete_task(task_id: str, authorization: str | None = Header(default=None)):
 
 
 @router.get("/tasks/{task_id}/logs")
-def get_task_logs(task_id: str):
+def get_task_logs(task_id: str, authorization: str | None = Header(default=None)):
+    auth = resolve_session(authorization)
+    actor = auth["user"]
     with get_connection() as conn:
+        _require_task_owner(conn, task_id, actor["user_id"], actor.get("role"))
         rows = conn.execute(
             "SELECT level, message, created_at FROM task_logs WHERE task_id=? ORDER BY created_at DESC LIMIT 200",
             (task_id,),
@@ -2047,8 +2085,11 @@ def get_task_logs(task_id: str):
 
 
 @router.get("/outputs/{output_id}")
-def get_output(output_id: str):
+def get_output(output_id: str, authorization: str | None = Header(default=None)):
+    auth = resolve_session(authorization)
+    actor = auth["user"]
     with get_connection() as conn:
+        _require_output_owner(conn, output_id, actor["user_id"], actor.get("role"))
         row = conn.execute(
             "SELECT output_id, task_id, user_id, title, output_type, content, text, file_url, size_bytes, download_url, created_at FROM outputs WHERE output_id=?",
             (output_id,),
@@ -2059,8 +2100,8 @@ def get_output(output_id: str):
 
 
 @router.get("/outputs/{output_id}/download-url")
-def output_download_url(output_id: str):
-    data = get_output(output_id)
+def output_download_url(output_id: str, authorization: str | None = Header(default=None)):
+    data = get_output(output_id, authorization)
     return {"status": "ok", "output_id": output_id, "download_url": data["output"]["download_url"]}
 
 

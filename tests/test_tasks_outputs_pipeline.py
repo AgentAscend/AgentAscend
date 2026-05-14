@@ -88,7 +88,7 @@ def test_create_task_background_worker_trigger_runs_when_flag_true(client: TestC
     assert response.status_code == 200, response.text
     assert calls == ["triggered"]
     task_id = response.json()["task_id"]
-    detail = client.get(f"/tasks/{task_id}")
+    detail = client.get(f"/tasks/{task_id}", headers=_auth_header(token))
     assert detail.status_code == 200, detail.text
     assert detail.json()["task"]["status"] == "queued"
     assert _selected_scheduler_states() == before_states
@@ -114,7 +114,7 @@ def test_create_task_background_worker_trigger_is_skipped_when_flag_false(client
     assert response.status_code == 200, response.text
     assert calls == []
     task_id = response.json()["task_id"]
-    detail = client.get(f"/tasks/{task_id}")
+    detail = client.get(f"/tasks/{task_id}", headers=_auth_header(token))
     assert detail.status_code == 200, detail.text
     assert detail.json()["task"]["status"] == "queued"
     assert _selected_scheduler_states() == before_states
@@ -164,7 +164,7 @@ def test_create_task_stores_real_job_fields(client: TestClient):
     assert set(response.json().keys()) == {"status", "task_id"}
     task_id = response.json()["task_id"]
 
-    detail = client.get(f"/tasks/{task_id}")
+    detail = client.get(f"/tasks/{task_id}", headers=_auth_header(token))
     assert detail.status_code == 200, detail.text
     task = detail.json()["task"]
     assert task["task_id"] == task_id
@@ -791,7 +791,7 @@ def test_scheduler_worker_completes_queued_task_and_creates_output(client: TestC
     run = run_job_once(job["id"])
     assert run["status"] == "success"
 
-    task = client.get(f"/tasks/{task_id}").json()["task"]
+    task = client.get(f"/tasks/{task_id}", headers=_auth_header(token)).json()["task"]
     assert task["status"] == "completed"
     assert task["error_message"] is None
 
@@ -827,7 +827,7 @@ def test_scheduler_worker_records_failed_task_error_without_output(client: TestC
     run = run_job_once(job["id"])
     assert run["status"] == "success"
 
-    task = client.get(f"/tasks/{task_id}").json()["task"]
+    task = client.get(f"/tasks/{task_id}", headers=_auth_header(token)).json()["task"]
     assert task["status"] == "failed"
     assert "Simulated task failure" in task["error_message"]
 
@@ -957,6 +957,79 @@ def test_output_list_requires_auth_and_is_scoped_to_signed_in_user(client: TestC
     assert forbidden.status_code == 403
 
 
+def test_task_detail_logs_and_actions_require_auth(client: TestClient):
+    _user_id, token = _signup(client, "tasks-private-auth-owner@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Private task auth", "type": "analysis", "agent_id": "agt_private_auth"},
+        headers=_auth_header(token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    assert client.get(f"/tasks/{task_id}").status_code == 401
+    assert client.get(f"/tasks/{task_id}/logs").status_code == 401
+    assert client.post(f"/tasks/{task_id}/retry").status_code == 401
+    assert client.post(f"/tasks/{task_id}/cancel").status_code == 401
+
+
+def test_user_cannot_read_or_mutate_another_users_task(client: TestClient):
+    _owner_id, owner_token = _signup(client, "tasks-private-owner@example.com")
+    _other_id, other_token = _signup(client, "tasks-private-attacker@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Private task", "type": "analysis", "agent_id": "agt_private"},
+        headers=_auth_header(owner_token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    before = client.get(f"/tasks/{task_id}", headers=_auth_header(owner_token))
+    detail = client.get(f"/tasks/{task_id}", headers=_auth_header(other_token))
+    logs = client.get(f"/tasks/{task_id}/logs", headers=_auth_header(other_token))
+    retry = client.post(f"/tasks/{task_id}/retry", headers=_auth_header(other_token))
+    cancel = client.post(f"/tasks/{task_id}/cancel", headers=_auth_header(other_token))
+    owner_detail = client.get(f"/tasks/{task_id}", headers=_auth_header(owner_token))
+
+    assert before.status_code == 200, before.text
+    assert detail.status_code == 403
+    assert logs.status_code == 403
+    assert retry.status_code == 403
+    assert cancel.status_code == 403
+    assert owner_detail.status_code == 200, owner_detail.text
+    assert owner_detail.json()["task"]["status"] == before.json()["task"]["status"]
+
+
+def test_output_detail_and_download_require_owner(client: TestClient):
+    _owner_id, owner_token = _signup(client, "outputs-private-owner@example.com")
+    _other_id, other_token = _signup(client, "outputs-private-attacker@example.com")
+    create = client.post(
+        "/tasks",
+        json={"title": "Private output", "type": "analysis", "agent_id": "agt_output_private"},
+        headers=_auth_header(owner_token),
+    )
+    assert create.status_code == 200, create.text
+    task_id = create.json()["task_id"]
+
+    import backend.app.db.session as session
+    from backend.app.services.job_runner import run_job_once
+
+    with session.get_connection() as conn:
+        job = conn.execute("SELECT id FROM scheduled_jobs WHERE job_type='task_queue_worker'").fetchone()
+    run_job_once(job["id"])
+
+    outputs_response = client.get(f"/outputs?task_id={task_id}", headers=_auth_header(owner_token))
+    assert outputs_response.status_code == 200, outputs_response.text
+    output_id = outputs_response.json()["outputs"][0]["output_id"]
+
+    assert client.get(f"/outputs/{output_id}").status_code == 401
+    assert client.get(f"/outputs/{output_id}/download-url").status_code == 401
+    assert client.get(f"/outputs/{output_id}", headers=_auth_header(other_token)).status_code == 403
+    assert client.get(f"/outputs/{output_id}/download-url", headers=_auth_header(other_token)).status_code == 403
+    assert client.get(f"/outputs/{output_id}", headers=_auth_header(owner_token)).status_code == 200
+    assert client.get(f"/outputs/{output_id}/download-url", headers=_auth_header(owner_token)).status_code == 200
+
+
 def test_delete_task_requires_auth(client: TestClient):
     _user_id, token = _signup(client, "tasks-delete-auth-owner@example.com")
     create = client.post(
@@ -986,7 +1059,7 @@ def test_task_owner_can_delete_task_and_it_disappears_from_task_list(client: Tes
 
     assert response.status_code == 200, response.text
     assert response.json() == {"status": "ok", "deleted": True}
-    detail = client.get(f"/tasks/{task_id}")
+    detail = client.get(f"/tasks/{task_id}", headers=_auth_header(token))
     assert detail.status_code == 404
     tasks_response = client.get("/tasks", headers=_auth_header(token))
     assert tasks_response.status_code == 200, tasks_response.text
@@ -1028,7 +1101,7 @@ def test_admin_can_delete_another_users_task(client: TestClient, monkeypatch):
 
     assert response.status_code == 200, response.text
     assert response.json() == {"status": "ok", "deleted": True}
-    assert client.get(f"/tasks/{task_id}").status_code == 404
+    assert client.get(f"/tasks/{task_id}", headers=_auth_header(admin_token)).status_code == 404
 
 
 def test_delete_task_removes_related_outputs_and_logs(client: TestClient):
@@ -1052,7 +1125,7 @@ def test_delete_task_removes_related_outputs_and_logs(client: TestClient):
     outputs_before = client.get(f"/outputs?task_id={task_id}", headers=_auth_header(token))
     assert outputs_before.status_code == 200, outputs_before.text
     assert len(outputs_before.json()["outputs"]) == 1
-    logs_before = client.get(f"/tasks/{task_id}/logs")
+    logs_before = client.get(f"/tasks/{task_id}/logs", headers=_auth_header(token))
     assert logs_before.status_code == 200, logs_before.text
     assert logs_before.json()["logs"]
 

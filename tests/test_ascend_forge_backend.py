@@ -293,7 +293,7 @@ def test_forge_agent_run_creates_owned_task_and_execution_bridge(client: TestCli
     assert body["agent_id"] == agent_id
     assert body["task_id"].startswith("tsk_")
 
-    task = client.get(f"/tasks/{body['task_id']}")
+    task = client.get(f"/tasks/{body['task_id']}", headers=_auth_header(token))
     _assert_status(task, 200)
     payload = task.json()["task"]
     assert payload["agent_id"] == agent_id
