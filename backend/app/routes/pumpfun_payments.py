@@ -6,14 +6,15 @@ import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
-from fastapi import APIRouter, Header
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, Header, Request
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from backend.app.db.errors import is_unique_violation
 from backend.app.db.session import get_connection
 from backend.app.services import pumpfun_node_helper
 from backend.app.services.access_service import FEATURE_RANDOM_NUMBER
-from backend.app.services.auth_service import require_user_access
+from backend.app.services.auth_service import require_user_access, resolve_session
 from backend.app.services.error_response import fail
 from backend.app.services.payment_config import required_positive_int_env
 from backend.app.services.payment_error_codes import (
@@ -409,9 +410,49 @@ def _record_verified_payment_and_access(*, row, tx_signature: str, invoice_id: s
     return payment_id
 
 
-@router.post("/payments/pumpfun/create", response_model=PumpfunCreateResponse)
-def create_pumpfun_payment(payload: PumpfunCreateRequest, authorization: str | None = Header(default=None)):
-    require_user_access(payload.user_id, authorization)
+def _require_payload_user_access(target_user_id: str, auth: dict) -> None:
+    user = auth["user"]
+    if user["user_id"] != target_user_id and user.get("role") != "admin":
+        fail(403, "forbidden", "Authenticated user cannot access another user's data")
+
+
+async def _parse_pumpfun_create_payload_after_auth(request: Request) -> PumpfunCreateRequest:
+    try:
+        body = await request.json()
+        return PumpfunCreateRequest.model_validate(body)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+    except Exception as exc:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "missing",
+                    "loc": ("body",),
+                    "msg": "Field required",
+                    "input": None,
+                }
+            ]
+        ) from exc
+
+
+@router.post(
+    "/payments/pumpfun/create",
+    response_model=PumpfunCreateResponse,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {"$ref": "#/components/schemas/PumpfunCreateRequest"},
+                }
+            },
+        }
+    },
+)
+async def create_pumpfun_payment(request: Request, authorization: str | None = Header(default=None)):
+    auth = resolve_session(authorization)
+    payload = await _parse_pumpfun_create_payload_after_auth(request)
+    _require_payload_user_access(payload.user_id, auth)
     enforce_rate_limit("payments.pumpfun.create", payload.user_id, limit=30, window_seconds=300)
 
     ttl_seconds = _payment_ttl_seconds()

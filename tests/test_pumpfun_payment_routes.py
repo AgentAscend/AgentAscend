@@ -97,6 +97,28 @@ def _intent_row(reference: str):
         ).fetchone()
 
 
+def _count_rows(table_name: str) -> int:
+    allowed_tables = {
+        "payment_intents",
+        "payments",
+        "access_grants",
+        "marketplace_entitlements",
+    }
+    assert table_name in allowed_tables
+
+    from backend.app.db.session import get_connection
+
+    with get_connection() as conn:
+        return conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+
+
+def _assert_no_payment_side_effects():
+    assert _count_rows("payment_intents") == 0
+    assert _count_rows("payments") == 0
+    assert _count_rows("access_grants") == 0
+    assert _count_rows("marketplace_entitlements") == 0
+
+
 def test_pumpfun_agent_mint_missing_fails_closed(monkeypatch):
     monkeypatch.delenv("AGENT_TOKEN_MINT_ADDRESS", raising=False)
 
@@ -114,6 +136,81 @@ def test_pumpfun_create_requires_auth(client: TestClient):
 
     assert response.status_code == 401, _safe_response_diag(response)
     assert response.json()["error"]["code"] == "unauthorized"
+
+
+def test_pumpfun_create_empty_json_requires_auth_before_body_validation(client: TestClient, monkeypatch):
+    build_calls = []
+    monkeypatch.setattr(
+        "backend.app.routes.pumpfun_payments.pumpfun_node_helper.build_payment_transaction",
+        lambda payload: build_calls.append(payload) or {"ok": True, "txBase64": "should-not-run"},
+    )
+
+    response = client.post("/payments/pumpfun/create", json={})
+
+    assert response.status_code == 401, _safe_response_diag(response)
+    assert response.json()["error"]["code"] == "unauthorized"
+    assert build_calls == []
+    _assert_no_payment_side_effects()
+
+
+def test_pumpfun_create_missing_body_requires_auth_before_body_validation(client: TestClient, monkeypatch):
+    build_calls = []
+    monkeypatch.setattr(
+        "backend.app.routes.pumpfun_payments.pumpfun_node_helper.build_payment_transaction",
+        lambda payload: build_calls.append(payload) or {"ok": True, "txBase64": "should-not-run"},
+    )
+
+    response = client.post("/payments/pumpfun/create")
+
+    assert response.status_code == 401, _safe_response_diag(response)
+    assert response.json()["error"]["code"] == "unauthorized"
+    assert build_calls == []
+    _assert_no_payment_side_effects()
+
+
+def test_pumpfun_create_bogus_auth_requires_auth_before_body_validation(client: TestClient, monkeypatch):
+    build_calls = []
+    monkeypatch.setattr(
+        "backend.app.routes.pumpfun_payments.pumpfun_node_helper.build_payment_transaction",
+        lambda payload: build_calls.append(payload) or {"ok": True, "txBase64": "should-not-run"},
+    )
+
+    response = client.post(
+        "/payments/pumpfun/create",
+        json={},
+        headers={"Authorization": "Bearer invalid-session-token"},
+    )
+
+    assert response.status_code == 401, _safe_response_diag(response)
+    assert response.json()["error"]["code"] == "unauthorized"
+    assert build_calls == []
+    _assert_no_payment_side_effects()
+
+
+def test_pumpfun_create_valid_auth_invalid_body_still_returns_validation_error(client: TestClient):
+    _user_id, token = _signup(client, "pumpfun-invalid-body@example.com")
+
+    response = client.post(
+        "/payments/pumpfun/create",
+        json={},
+        headers=_auth_header(token),
+    )
+
+    assert response.status_code == 422, _safe_response_diag(response)
+    _assert_no_payment_side_effects()
+
+
+def test_pumpfun_create_openapi_keeps_request_body_schema(client: TestClient):
+    schema = client.get("/openapi.json").json()
+
+    request_body = schema["paths"]["/payments/pumpfun/create"]["post"].get("requestBody")
+
+    assert request_body is not None
+    assert request_body["required"] is True
+    assert (
+        request_body["content"]["application/json"]["schema"]["$ref"]
+        == "#/components/schemas/PumpfunCreateRequest"
+    )
 
 
 def test_pumpfun_create_missing_payment_config_returns_payment_config_error(client: TestClient, monkeypatch):
