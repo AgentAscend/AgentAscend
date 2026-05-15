@@ -6,7 +6,7 @@ import os
 import secrets
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Header, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query
 from pydantic import BaseModel, Field
 
 from backend.app.db.session import get_connection
@@ -67,6 +67,7 @@ from backend.app.services import execution_ledger
 from backend.app.services.auth_service import require_user_access, resolve_session, update_profile
 from backend.app.services.error_response import fail
 from backend.app.services.job_runner import run_job_once
+from backend.app.routes.jobs import _require_runtime_admin
 
 router = APIRouter()
 
@@ -2526,8 +2527,21 @@ def install_track(listing_id: str, payload: InstallListingRequest, authorization
     return result
 
 
+def _metadata_key_summary(metadata_json: str | None) -> list[str]:
+    if not metadata_json:
+        return []
+    try:
+        metadata = json.loads(metadata_json)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(metadata, dict):
+        return []
+    return sorted(str(key) for key in metadata.keys())
+
+
 @router.get("/ops/audit-events")
-def audit_events(limit: int = 200):
+def audit_events(limit: int = 200, _admin: None = Depends(_require_runtime_admin)):
+    bounded_limit = min(max(limit, 1), 1000)
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -2536,15 +2550,14 @@ def audit_events(limit: int = 200):
             ORDER BY created_at DESC
             LIMIT ?
             """,
-            (min(max(limit, 1), 1000),),
+            (bounded_limit,),
         ).fetchall()
-    return {
-        "status": "ok",
-        "events": [
-            {**_row_dict(r), "metadata": json.loads(r["metadata_json"])}
-            for r in rows
-        ],
-    }
+    events = []
+    for row in rows:
+        event = _row_dict(row) or {}
+        event["metadata_keys"] = _metadata_key_summary(event.pop("metadata_json", None))
+        events.append(event)
+    return {"status": "ok", "events": events}
 
 
 class OpsAlertInput(BaseModel):
