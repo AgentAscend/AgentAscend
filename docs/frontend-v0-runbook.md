@@ -11,9 +11,23 @@ Keep v0/Vercel frontend work aligned with the live backend contract and prevent 
   - `/app/marketplace`
   - `/app/executions`
 - Live routes returned HTTP 200 during read-only audit.
+- Latest Workflow Run-History / Execution Trace UX production QA PASS: `raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass.md`. It verified PR #5 merged/live at `a010a7aff8ec2358c21fe088ac87d5ede3144f2a`, Vercel production success, `/app/workflows` HTTP 200, `/app/executions` HTTP 200, backend `/health` HTTP 200, backend `/openapi.json` HTTP 200 valid JSON, execution trace preview/link markers, and no raw metadata/payload rendering or forbidden scheduler/admin/payment calls. PR #4 Deployment Events UX is separately merged/live at `ec4b59e68d7f26edeb43e8a48b122cfeff539fac`; prior stale/mixed PR #4 references are resolved.
 - Latest production Run Agent UI click-path QA PASS WITH CAVEAT: `raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat.md`. It verified throwaway signup → Ascend Forge create → visible Run Agent click → `POST /agents/{id}/run` HTTP 200 → Running/Pending state → Tasks/Executions/Outputs/Overview runtime state. Exact `Agent run queued` toast was not observed and remains polish. Payment, wallet, admin, scheduler, `/jobs/run-due`, and Pump.fun were intentionally not tested/called.
 - Previous live Playwright QA PASS WITH CAVEATS: `raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats.md`. It verified throwaway signup → Ascend Forge create → Run Agent → Task → Execution → Output → Output preview plus Output Library search/preview/disabled unsupported actions. Payment, wallet, and Pump.fun were intentionally not tested.
 
+
+## Workflow Run-History / Execution Trace UX release gate
+A workflow run-history source or live deployment passes this gate when:
+- `/app/workflows` and `/app/executions` return HTTP 200 in production.
+- Backend `/health` returns HTTP 200.
+- Backend `/openapi.json` returns HTTP 200 and valid JSON.
+- Run-history renders execution trace preview and links to execution, task, and output where backend data exists.
+- Empty/missing linked data uses honest copy such as “Execution details are not linked for this run yet.” and “No output linked yet.”
+- Status rendering covers queued, running, completed, failed, pending approval, and an unknown neutral fallback without inventing backend state.
+- Raw `metadata_json`, raw `payload_json`, raw task/output content, cookies, tokens, wallet/private data, and credentials are not rendered or archived.
+- Scheduler/admin/payment safety markers remain absent: no `/jobs/run-due`, no frontend runtime-token/admin audit calls, no payment route calls added unless the slice explicitly covers payments.
+
+Latest archived PASS: `raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass.md`.
 
 ## Run Agent UI click-path release gate
 A Run Agent source or live deployment passes this gate when:

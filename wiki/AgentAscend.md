@@ -25,13 +25,15 @@ AgentAscend is a monetized AI x Web3 agent platform. It combines backend-authori
 - Production API is healthy at runtime-worker commit `5e7afb1`; workflow auth ownership hardening is live.
 - Runtime-worker backend is live.
 - Runtime-aware frontend/source audit passed.
+- Workflow Run-History / Execution Trace UX production verification passed on 2026-05-17: PR #5 is merged/live at `a010a7aff8ec2358c21fe088ac87d5ede3144f2a`, `/app/workflows` and `/app/executions` are HTTP 200, backend health/OpenAPI are HTTP 200, execution trace preview/link markers are live, and no raw metadata/payload rendering or forbidden scheduler/admin/payment calls were introduced. Evidence is archived at [[raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass]].
+- Deployment Events UX is separately merged/live from PR #4 at `ec4b59e68d7f26edeb43e8a48b122cfeff539fac`; PR #4 and PR #5 are separate successful slices and prior stale/mixed PR #4 references are resolved.
 - Production Playwright QA on 2026-05-16 passed with caveat for the merged Run Agent UI click path: throwaway signup → Ascend Forge create → visible Run Agent click → backend run POST 200 → Running/Pending state → Tasks/Executions/Outputs/Overview runtime state. Evidence is archived at [[raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat]].
 - Live Playwright QA on 2026-05-13 passed with caveats for the broader core loop and Output Library: throwaway signup → Ascend Forge create → Run Agent → Task → Execution → Output → Output preview. Evidence is archived at [[raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats]].
 - Workflow-builder owner-isolation QA passed on 2026-05-09; User A create/save/read/run works, User B cross-user access is blocked with 403, graph saves respect `{ nodes: [...] }`, workflow copy is honest/partially-live, and no payment/scheduler/admin exposure occurred. Evidence is archived at [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa]].
 - Pump.fun payment/access regression passed; Pump.fun payment flow remains separate from the next frontend polish phase.
 - Forge backend routes are live through deployment events, Command Center, agent definitions, capabilities/templates, and run/deploy bridges.
 - Scheduler workload is report-first/owner-gated.
-- Output Library UX patch is live and browser-QA verified: backend output listing, local loaded-list search, disabled unsupported Export All/Load More, and backend output preview. Run Agent UI click path is production verified; exact success toast copy remains polish. Frontend product work now shifts to deployment events/log-streaming UX, richer workflow run-history details, settings/token/community polish, task/execution/output detail polish, and optional throwaway QA cleanup planning. Full visual workflow graph editing is not live yet.
+- Output Library UX patch is live and browser-QA verified: backend output listing, local loaded-list search, disabled unsupported Export All/Load More, and backend output preview. Deployment Events UX and Workflow Run-History / Execution Trace UX are live. Run Agent UI click path is production verified; exact success toast copy remains polish. Frontend product work now shifts to task/execution/output detail polish, settings/token/community polish, and optional throwaway QA cleanup planning. Full visual workflow graph editing is not live yet.
 
 ## Notes
 - Backend remains the authority for payment, access, marketplace entitlements, tasks, outputs, executions, and agents.
@@ -46,6 +48,7 @@ AgentAscend is a monetized AI x Web3 agent platform. It combines backend-authori
 - [[Launch Readiness]]
 
 ## Recent Evidence
+- [[raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass|2026-05-17 Workflow Run-History / Execution Trace UX live PASS]]
 - [[raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat|2026-05-16 production Run Agent UI click path QA PASS WITH CAVEAT]]
 - [[raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats|2026-05-13 live Output Library and runtime QA PASS WITH CAVEATS]]
 - [[raw/launch-evidence/2026-05-03-pumpfun-controlled-payment-regression-pass|2026-05-03 controlled Pump.fun payment regression PASS]]

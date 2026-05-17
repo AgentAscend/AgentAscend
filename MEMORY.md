@@ -1,12 +1,12 @@
 # AgentAscend MEMORY.md
 
-## Current operating state — verified 2026-05-16
-AgentAscend is a crypto-native AI agent platform and marketplace. The backend is the source of truth for payment, access, marketplace entitlements, scheduler state, executions, tasks, outputs, agents, workflows, and user-owned data. Runtime-worker backend is live, workflow ownership hardening is live, and 2026-05-16 production QA verified the merged Run Agent UI click path from visible UI: throwaway signup → Ascend Forge create → Run Agent → Task → Execution → Output → Overview. Frontend/v0 must display backend truth and must not use localStorage as authority for paid unlocks, access, ownership, settings, payments, marketplace installs, agent metrics, workflow ownership, or runtime status.
+## Current operating state — verified 2026-05-17
+AgentAscend is a crypto-native AI agent platform and marketplace. The backend is the source of truth for payment, access, marketplace entitlements, scheduler state, executions, tasks, outputs, agents, workflows, and user-owned data. Runtime-worker backend is live, workflow ownership hardening is live, Deployment Events UX is live, and Workflow Run-History / Execution Trace UX is live. Frontend/v0 must display backend truth and must not use localStorage as authority for paid unlocks, access, ownership, settings, payments, marketplace installs, agent metrics, workflow ownership, or runtime status.
 
 ## Verified production baseline
 - Git branch: `main`; local main is diverged from `origin/main` and must not be pushed without explicit reconciliation/scope review.
 - Current git posture observed 2026-05-12: `main...origin/main [ahead 8, behind 8]` plus broad untracked raw/wiki/skills artifacts and local `.obsidian/*` changes.
-- Latest recorded remote/deployment evidence points to `origin/main` commit `74bd6e92d2129500dc92261eda9f9b09ea2a5ae5`; live `/health` and `/openapi.json` should be rechecked before any deploy/release claim.
+- Latest recorded AgentAscend-Web production evidence points to `origin/main` commit `a010a7aff8ec2358c21fe088ac87d5ede3144f2a` for PR #5 Workflow Run-History / Execution Trace UX; live `/health` and `/openapi.json` returned HTTP 200 during the verification.
 - Local systemd scheduler is active/enabled as `agentascend-scheduler.service`, using `.venv/bin/python scripts/run_scheduler.py`, `Restart=always`, and `/etc/agentascend-scheduler.env`.
 - Live API: `GET https://api.agentascend.ai/health` returns HTTP 200 `{"status":"ok"}` in current checks; standard API security headers have been present in recent audits.
 
@@ -15,6 +15,7 @@ After every AgentAscend deploy, Hermes must run the matching post-deploy QA chec
 
 ## Current product evidence
 - 2026-05-11 standing Vercel/frontend post-deploy QA PASS: live routes, CSP/security headers, Solana RPC/WSS, API health/OpenAPI, no-auth private-read guards, and deployed bundle markers passed.
+- 2026-05-17 Workflow Run-History / Execution Trace UX production verification PASS: AgentAscend-Web PR #5 is merged/live at `a010a7aff8ec2358c21fe088ac87d5ede3144f2a`; `/app/workflows`, `/app/executions`, backend `/health`, and backend `/openapi.json` returned HTTP 200, execution trace preview/link markers are live, and no `/jobs/run-due`, admin runtime token, raw metadata/payload rendering, or new payment route calls were introduced. PR #4 Deployment Events UX is separately merged/live at `ec4b59e68d7f26edeb43e8a48b122cfeff539fac`; prior stale/mixed PR #4 references are resolved.
 - 2026-05-16 production Run Agent UI click-path QA PASS WITH CAVEAT: AgentAscend-Web `fix/run-agent-ui-click-path` merged to main at `0292142b39962c705069e3c5d6daf2fbf157622c` (`app/app/agents/page.tsx` only). Production throwaway signup, safe agent create, visible Run Agent click, `POST /agents/{id}/run` HTTP 200, Running/Pending UI state, and Tasks/Executions/Outputs/Overview propagation passed. Only caveat: exact `Agent run queued` toast was not observed.
 - 2026-05-13 live Output Library + signed-in runtime QA PASS WITH CAVEATS: local Playwright no-sandbox harness verified public/app routes, throwaway signup, Ascend Forge create, Run Agent from agent-card menu, backend 1 agent/1 task/1 execution/1 output, Output Library local search copy, disabled Export All/Load More, and backend output preview. Throwaway QA resources remain in production; do not delete without separate owner-approved cleanup.
 - Workflow builder owner-isolation QA PASS remains current: User A create/save/read/run works; User B list exclusion and direct cross-user graph/run/runs access are blocked.
@@ -39,7 +40,7 @@ Enabled/audited production scheduler jobs include backend health, integration dr
 
 ## Current next recommended phases
 1. Verify payment↔grant linkage scope and write/execute a TDD local hardening plan before any launch expansion.
-2. Continue frontend/runtime product work: deployment events/log-streaming UX, richer workflow run-history details, settings/token/community polish, success-toast polish for Run Agent, and optional throwaway QA cleanup plan only if owner approves production cleanup.
+2. Continue frontend/runtime product work: next product slice can proceed after the now-live Deployment Events UX and Workflow Run-History / Execution Trace UX; good candidates are task/execution/output detail polish, settings/token/community polish, success-toast polish for Run Agent, and optional throwaway QA cleanup planning only if owner approves production cleanup.
 3. Add remaining backend gap slices one at a time only when frontend polish proves a real missing endpoint.
 4. Continue knowledge/wiki/Obsidian cleanup in small batches; keep routine generated cron reports out of git noise unless intentionally archived.
 5. Multi-agent architecture setup after frontend/backend product contracts are clearer.
