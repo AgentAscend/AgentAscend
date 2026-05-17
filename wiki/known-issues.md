@@ -12,17 +12,17 @@ aliases:
 Known issues are current unresolved product, integration, or hardening risks. Stale phase blockers should be marked superseded and should not be treated as current launch blockers.
 
 ## Components
-- Payment/access auditability risks.
-- Frontend/runtime truth and polish risks.
-- Scheduler, cronjob, dependency, and git hygiene risks.
-- Superseded blockers retained for historical clarity.
+- Launch-risk investigations.
+- Superseded blockers.
+- Frontend/backend source-of-truth risks.
+- Payment/access hardening watch items.
 
 ## Current high-priority issues
-1. Historical/null-heavy payment↔grant linkage rows, if any, remain audit-only; future-path linkage hardening is deployed and no production backfill was performed. Any cleanup/backfill requires future owner approval.
-2. v0 UI polish must continue to derive runtime truth from live backend Forge routes, Command Center, deployment events, tasks, outputs, executions, workflows, payment/access truth, and not stale placeholders. Output Library search/preview basics are live and browser-QA verified; do not reintroduce fake export/load-more/search authority.
+1. Payment↔grant ledger linkage/auditability needs investigation: 2026-05-11 read-only local DB/payment reports found completed payments without active grant linkage by `payment_id` and active grants null-heavy for `payment_id`/`intent_reference`. Treat as a launch-risk investigation until production-vs-local scope, backfill path, and forward invariants are verified.
+2. v0 UI polish must continue to derive runtime truth from live backend Forge routes, Command Center, deployment events, tasks, outputs, executions, workflows, payment/access truth, and not stale placeholders. Run Agent UI click path and Output Library search/preview basics are production/browser-QA verified; do not reintroduce fake runtime/export/load-more/search authority.
 3. Workflow builder remains partially live: owner-isolation passed, but node configuration/labels and richer run-history detail still need product polish; full visual graph editing remains later.
 4. localStorage must not grant paid access, marketplace ownership/install, payment verification, auth bypass, production settings authority, Agent card metrics, workflow ownership, graph state, or runtime status.
-5. Continue watching for stale user-facing `Backend Required` copy in live app advanced/preview surfaces.
+5. Continue watching for stale user-facing `Backend Required` copy in live app advanced/preview surfaces; exact Run Agent success toast copy remains polish because `Agent run queued` was not observed after a successful production run.
 6. Remaining Pump.fun/Solana runtime dependency advisories are accepted/monitored, not eliminated.
 7. Multi-agent runtime architecture is still planning-only.
 8. Git repository is diverged/noisy (`main` ahead/behind `origin/main` observed 8/8 on 2026-05-12); no push/deploy until reconciliation scope is explicit.
@@ -32,21 +32,17 @@ Known issues are current unresolved product, integration, or hardening risks. St
 - HSTS absent: superseded by live HSTS/security-header checks.
 - Replay-index migration pending: superseded by preflight PASS / DDL not needed now.
 - Exact `tx_signature` binding future work: superseded by deployed hardening.
-- Future-path payment↔grant linkage implementation pending: superseded by deployed commit `7cc1c6a986e1e2a1896b5e8e5b62b36917bccc70`; historical repair remains proposal-only.
 - Controlled Pump.fun payment regression pending/partial: superseded by 2026-05-03 PASS archive.
 - Forge routes not live: superseded by live OpenAPI evidence.
-- Core logged-in runtime loop blocked: superseded by owner-assisted QA and Hermes 2026-05-13 live Output Library/runtime QA PASS WITH CAVEATS.
+- Core logged-in runtime loop blocked: superseded by owner-assisted QA, Hermes 2026-05-13 live Output Library/runtime QA PASS WITH CAVEATS, and 2026-05-16 production Run Agent UI click-path QA PASS WITH CAVEAT.
 - Workflow auth/ownership privacy blocker: superseded by live workflow owner-isolation QA PASS archived at [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa]].
 - Task queue worker disabled: superseded by audited enablement.
 - Telegram auto-send risk: superseded by report-only/no-send default, though outbound sends still need owner approval.
 - Old failed deploy baselines: superseded by later successful deploys and live health/OpenAPI checks.
 - Paused Hermes documentation/strategy/roadmap cronjob errors: superseded by 2026-05-12 retirement/removal and safer active report-only jobs.
 
-## Notes
-- Keep unresolved items evidence-linked and avoid resurrecting superseded launch blockers.
-- Do not treat local payment/access findings as production facts until scope is verified.
-
 ## Recent Evidence
+- [[raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat|2026-05-16 production Run Agent UI click path QA PASS WITH CAVEAT]]
 - [[raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats|2026-05-13 live Output Library and runtime QA PASS WITH CAVEATS]]
 - [[raw/system-cleanup/2026-05-12-project-cleanup-cronjob-review|2026-05-12 project cleanup and cronjob review]]
 - [[raw/cronjob-retirement/2026-05-12-hermes-paused-job-cleanup|2026-05-12 Hermes paused cronjob cleanup]]
@@ -55,8 +51,10 @@ Known issues are current unresolved product, integration, or hardening risks. St
 - [[raw/frontend-qa/2026-05-11-full-signed-in-functional-ux-qa-pass|2026-05-11 full signed-in functional UX QA PASS WITH CAVEATS]]
 - [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa|2026-05-09 workflow-builder owner-isolation QA PASS]]
 - [[raw/launch-evidence/2026-05-03-pumpfun-controlled-payment-regression-pass|2026-05-03 controlled Pump.fun payment regression PASS]]
-- [[raw/security-reviews/2026-05-12-payment-grant-linkage-tdd-report|2026-05-12 payment↔grant linkage TDD and deployment PASS]]
 - [[raw/security-reviews/2026-05-02-replay-index-preflight|2026-05-02 replay-index preflight PASS / DDL not needed]]
+
+## Notes
+Known issues should stay current and should not preserve stale blockers as active risks after live QA or source-of-truth evidence supersedes them.
 
 ## Relationships
 - [[current-project-state|Current Project State]]
