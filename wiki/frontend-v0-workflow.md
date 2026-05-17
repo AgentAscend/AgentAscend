@@ -18,9 +18,9 @@ The frontend is managed through v0/Vercel iterations. Current work should be pat
 - Playwright QA harness at `/tmp/agentascend-browser-qa/`.
 
 ## Current frontend/product status
-Production Playwright QA on 2026-05-16 passed with caveat for the merged Run Agent UI click path: throwaway signup → Ascend Forge create → visible Run Agent click → `POST /agents/{id}/run` HTTP 200 → Running/Pending state → Tasks/Executions/Outputs/Overview runtime state. Exact `Agent run queued` toast copy was not observed and remains UI polish. Live Playwright QA on 2026-05-13 also passed with caveats for the deployed Output Library UX patch and the broader runtime loop. Workflow-builder owner-isolation QA passed on 2026-05-09 and is archived at [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa]]. Frontend no longer appears blocked on backend integration for agents, tasks, outputs, executions, Output Library preview/search basics, or workflow ownership basics.
+Production verification on 2026-05-17 passed for Workflow Run-History / Execution Trace UX: PR #5 is merged/live at `a010a7aff8ec2358c21fe088ac87d5ede3144f2a`, `/app/workflows` and `/app/executions` return HTTP 200, backend health/OpenAPI return HTTP 200, execution trace preview/link markers are live, and no raw metadata/payload rendering or forbidden scheduler/admin/payment calls were introduced. Deployment Events UX is separately merged/live from PR #4 at `ec4b59e68d7f26edeb43e8a48b122cfeff539fac`; prior stale/mixed PR #4 references are resolved. Production Playwright QA on 2026-05-16 passed with caveat for the merged Run Agent UI click path: throwaway signup → Ascend Forge create → visible Run Agent click → `POST /agents/{id}/run` HTTP 200 → Running/Pending state → Tasks/Executions/Outputs/Overview runtime state. Exact `Agent run queued` toast copy was not observed and remains UI polish. Live Playwright QA on 2026-05-13 also passed with caveats for the deployed Output Library UX patch and the broader runtime loop. Workflow-builder owner-isolation QA passed on 2026-05-09 and is archived at [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa]]. Frontend no longer appears blocked on backend integration for agents, tasks, outputs, executions, Output Library preview/search basics, or workflow ownership basics.
 
-`/app/workflows` is partially live: User A create/save/read/run works through live routes; User B cannot list or directly access User A workflow graph/run/runs. The frontend respected the backend graph payload boundary `{ nodes: [...] }`, did not send unsupported `edges`, and showed honest partially-live/template/settings copy.
+`/app/workflows` is live for ownership basics and improved run-history visibility: User A create/save/read/run works through live routes; User B cannot list or directly access User A workflow graph/run/runs; run-history now exposes execution trace preview and links to execution, task, and output where backend data exists. The frontend respected the backend graph payload boundary `{ nodes: [...] }`, did not send unsupported `edges`, and showed honest partially-live/template/settings copy.
 
 Remaining Swarm Cycle 003 focus pages:
 - `/app/overview`
@@ -31,7 +31,7 @@ Remaining Swarm Cycle 003 focus pages:
 - `/app/workflows`
 - `/app/deployments`
 
-Primary work is polish and clarity: deployment events/log-streaming UX, richer workflow run-history details, settings/token/community polish, Run Agent success-toast polish, task/execution/output detail polish, and optional throwaway QA cleanup planning if owner approves production cleanup. Output Library now honestly shows backend output listing, local loaded-list search, disabled unsupported Export All/Load More, and backend output preview. Full visual workflow graph editing remains not live; keep workflow copy honest without implying agents cannot run.
+Primary work is polish and clarity: task/execution/output detail polish, settings/token/community polish, Run Agent success-toast polish, and optional throwaway QA cleanup planning if owner approves production cleanup. Deployment Events UX and Workflow Run-History / Execution Trace UX are live. Output Library now honestly shows backend output listing, local loaded-list search, disabled unsupported Export All/Load More, and backend output preview. Full visual workflow graph editing remains not live; keep workflow copy honest without implying agents cannot run.
 
 ## Backend truth available now
 Live OpenAPI includes Forge capability/templates, agent definitions, run/deploy/workflow bridges, Command Center, deployment events, Pump.fun routes, marketplace/access surfaces, and execution routes. The next v0 prompts should wire UI to these contracts instead of showing fake local data.
@@ -67,5 +67,6 @@ Patch-only frontend work must preserve backend authority, avoid fake local state
 - [[Roadmap]]
 
 ## Recent Evidence
+- [[raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass|2026-05-17 Workflow Run-History / Execution Trace UX live PASS]]
 - [[raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat|2026-05-16 production Run Agent UI click path QA PASS WITH CAVEAT]]
 - [[raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats|2026-05-13 live Output Library and runtime QA PASS WITH CAVEATS]]
