@@ -11,8 +11,22 @@ Keep v0/Vercel frontend work aligned with the live backend contract and prevent 
   - `/app/marketplace`
   - `/app/executions`
 - Live routes returned HTTP 200 during read-only audit.
-- Latest live Playwright QA PASS WITH CAVEATS: `raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats.md`. It verified throwaway signup → Ascend Forge create → Run Agent → Task → Execution → Output → Output preview plus Output Library search/preview/disabled unsupported actions. Payment, wallet, and Pump.fun were intentionally not tested.
+- Latest production Run Agent UI click-path QA PASS WITH CAVEAT: `raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat.md`. It verified throwaway signup → Ascend Forge create → visible Run Agent click → `POST /agents/{id}/run` HTTP 200 → Running/Pending state → Tasks/Executions/Outputs/Overview runtime state. Exact `Agent run queued` toast was not observed and remains polish. Payment, wallet, admin, scheduler, `/jobs/run-due`, and Pump.fun were intentionally not tested/called.
+- Previous live Playwright QA PASS WITH CAVEATS: `raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats.md`. It verified throwaway signup → Ascend Forge create → Run Agent → Task → Execution → Output → Output preview plus Output Library search/preview/disabled unsupported actions. Payment, wallet, and Pump.fun were intentionally not tested.
 
+
+## Run Agent UI click-path release gate
+A Run Agent source or live deployment passes this gate when:
+- A throwaway account can sign up/sign in.
+- `/app/agents` opens and one safe test agent can be created.
+- The visible agent action/menu Run Agent path is clicked exactly once.
+- Browser network observes `POST /agents/{id}/run` returning HTTP 200.
+- UI does not show false `Failed to run agent` copy after the successful run.
+- UI shows an honest queued/running/pending state, or a clear success/refresh warning.
+- `/app/tasks`, `/app/executions`, `/app/outputs`, and `/app/overview` show runtime state or honest pending/empty state.
+- Payment, Pump.fun verify, scheduler, `/jobs/run-due`, wallet signing, and frontend admin endpoints are not called during QA.
+
+Latest archived PASS WITH CAVEAT: `raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat.md`. Exact `Agent run queued` toast text remains polish, not a current blocker.
 
 ## Output Library release gate
 An Output Library source or live deployment passes this gate only when:
@@ -26,8 +40,16 @@ An Output Library source or live deployment passes this gate only when:
 
 Latest archived PASS WITH CAVEATS: `raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats.md`. Throwaway QA resources remain in production and require a separate owner-approved cleanup plan before deletion.
 
-## Workflow builder owner-isolation gate
-Workflow owner-isolation QA passed on 2026-05-09 and is archived at `raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa.md`. Future v0 workflow work must preserve the backend graph payload boundary `{ nodes: [...] }`; do not present `edges`, branching, ordered steps, output schemas, or full visual graph editing as live until backend OpenAPI supports those fields/features. Owner-isolation regression checks should verify User A create/save/read/run, User B list exclusion, and 403 on cross-user graph/save/run/runs probes.
+## Workflow builder owner-isolation release gate
+A workflow-builder source or live deployment passes the ownership gate only when:
+- User A can create a workflow through `/app/workflows`, save/read a graph, run it once, and read run history.
+- Graph save sends the backend-supported shape `{ nodes: [...] }` and does not send unsupported `edges` unless OpenAPI later supports them.
+- User B's workflow list excludes User A's workflow.
+- User B direct probes against User A workflow graph, graph save, run, and runs history return 403.
+- Workflow copy remains honest: `PARTIALLY LIVE` is acceptable; unsupported templates, full visual graph editing, branching, output schemas, and fake settings must be disabled or marked coming later.
+- Payment, Pump.fun verify, scheduler, `/jobs/run-due`, and frontend admin endpoints are not called during workflow QA.
+
+Latest archived PASS: `raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa.md`.
 
 ## Pump.fun wallet/payment release gate
 A v0 source or live deployment passes the wallet/payment gate only when:
@@ -42,8 +64,8 @@ A v0 source or live deployment passes the wallet/payment gate only when:
 ## Current live CSP requirement
 Production `connect-src` should include:
 - `https://api.agentascend.ai`
-- the configured browser RPC HTTPS origin
-- the matching configured browser RPC WSS origin
+- `https://rpc.solanatracker.io`
+- `wss://rpc.solanatracker.io`
 - existing allowed Solana/RPC/analytics origins as configured
 
 Google Fonts must remain allowed if used:
@@ -60,7 +82,7 @@ for path in ['/app/overview','/app/marketplace','/app/executions']:
     with urllib.request.urlopen(req, timeout=25) as r:
         csp=r.headers.get('content-security-policy','')
         html=r.read().decode('utf-8','ignore')
-    print(path, 'has_browser_rpc_https=', 'https://' in csp and 'rpc' in csp.lower(), 'has_browser_rpc_wss=', 'wss://' in csp and 'rpc' in csp.lower())
+    print(path, 'https_rpc=', 'https://rpc.solanatracker.io' in csp, 'wss_rpc=', 'wss://rpc.solanatracker.io' in csp)
     assets=sorted(set(re.findall(r'(?:src|href)="([^"]*_next/static/[^"]+\.js[^"]*)"', html)))
     bundle=''
     for src in assets:
@@ -91,9 +113,3 @@ Add lint when configured and reliable.
 
 ## Browser limitations
 If browser automation is blocked in the audit container by Chromium sandbox/user namespace errors, use live HTTP headers, bundle inspection, backend OpenAPI, and direct WSS connectivity as the no-payment deployment gate. State the limitation explicitly.
-
-## Related
-- [[current-project-state|Current Project State]]
-- [[AgentAscend]]
-- [[Hermes]]
-- [[Cronjobs]]
