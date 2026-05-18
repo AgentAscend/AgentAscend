@@ -21,6 +21,7 @@ AgentAscend is in a soft-launch/product-integration posture. The backend remains
 - Live frontend domain: `https://www.agentascend.ai`.
 - Live API health: `GET https://api.agentascend.ai/health` returns HTTP 200 `{"status":"ok"}` in current checks.
 - Live frontend post-deploy QA on 2026-05-11 passed route/header/CSP/Solana RPC/WSS/OpenAPI/private-read/bundle gates.
+- Runtime Detail / Output Polish production verification on 2026-05-17 passed after AgentAscend-Web PR #14 merged to `origin/main` at `e2e0873da63e4cb193ef35749ce786f7a52ed27c`: task detail links safely to Output Library with `/app/outputs?task_id=<task_id>`, execution detail supports copy link/ID/source ID, output detail supports copy link and `Untitled output` fallback, production routes and backend health/OpenAPI returned HTTP 200, and no payment/wallet/API-base/scheduler/admin/raw metadata or payload regressions were introduced.
 - Workflow Run-History / Execution Trace UX production verification on 2026-05-17 passed after AgentAscend-Web PR #5 merged to `origin/main` at `a010a7aff8ec2358c21fe088ac87d5ede3144f2a`: Vercel production success, `/app/workflows` HTTP 200, `/app/executions` HTTP 200, backend `/health` HTTP 200, backend `/openapi.json` HTTP 200 valid JSON, execution trace preview/link markers live, and no raw metadata/payload rendering or forbidden scheduler/admin/payment calls introduced.
 - Deployment Events UX is separately merged/live from PR #4 at `ec4b59e68d7f26edeb43e8a48b122cfeff539fac`; PR #4 and PR #5 are separate successful slices and prior stale/mixed report references are resolved.
 - Production Run Agent toast/drawer follow-up QA on 2026-05-17 passed with polish caveat: throwaway signup → Ascend Forge create → exactly one visible Run Agent click → `POST /agents/{id}/run` HTTP 200 → task_id returned → no false failure → Pending/Running state → Latest Run drawer without reload → `Open Task` link to `/app/tasks?task_id=...` → Tasks/Executions/Outputs/Overview runtime state. Exact `Agent run queued` / toast action visibility remains optional polish, not a blocker; `Open Execution` was not applicable because the run response did not contain execution_id.
@@ -35,7 +36,7 @@ AgentAscend is in a soft-launch/product-integration posture. The backend remains
 - `/app/workflows` production baseline: workflow ownership basics are live, create/save/read/run works for owner, cross-user access is blocked, graph save respects `{ nodes: [...] }`, and run-history now exposes execution trace preview plus links to execution/task/output where backend data exists. Full visual graph/editor features remain later.
 - Pump.fun marketplace payment regression passed separately; keep payment/wallet flow separate from routine UI polish.
 - Frontend no longer appears blocked on backend integration for tasks, outputs, executions, agent creation/run, Output Library preview/search basics, or workflow ownership basics.
-- Output Library UX patch is live and browser-QA verified: backend output listing, local loaded-list search copy, disabled unsupported Export All/Load More, and backend output preview. Deployment Events UX and Workflow Run-History / Execution Trace UX are live. Run Agent runtime and Latest Run `Open Task` navigation are production verified; remaining Run Agent caveat is optional success-toast persistence/visibility polish only. Payment, Pump.fun, and wallet flows were intentionally not tested in these frontend QA slices. Remaining product work: task/execution/output detail polish, settings/token/community polish, and optional throwaway QA cleanup planning if owner-approved.
+- Output Library UX patch is live and browser-QA verified: backend output listing, local loaded-list search copy, disabled unsupported Export All/Load More, and backend output preview. Deployment Events UX, Workflow Run-History / Execution Trace UX, and Runtime Detail / Output Polish are live. Run Agent runtime and Latest Run `Open Task` navigation are production verified; remaining Run Agent caveat is optional success-toast persistence/visibility polish only. Payment, Pump.fun, and wallet flows were intentionally not tested in these frontend QA slices. Remaining product work: runtime detail copy accessibility labels/tooltips, settings/token/community polish, and optional throwaway QA cleanup planning if owner-approved.
 
 ## Current launch-risk watch
 - 2026-05-11 read-only local DB/payment reports flagged completed payments without active grant linkage by `payment_id` and null-heavy grant linkage fields.
@@ -58,6 +59,7 @@ Throwaway QA resources from 2026-05-13 remain in production and require a separa
 - [[Roadmap]]
 
 ## Recent Evidence
+- [[raw/frontend-qa/2026-05-17-runtime-detail-output-polish-live-pass|2026-05-17 Runtime Detail / Output Polish live PASS]]
 - [[raw/frontend-qa/2026-05-17-run-agent-toast-drawer-followup-production-qa|2026-05-17 Run Agent toast/drawer follow-up QA PASS WITH POLISH CAVEAT]]
 - [[raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass|2026-05-17 Workflow Run-History / Execution Trace UX live PASS]]
 - [[raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat|2026-05-16 production Run Agent UI click path QA PASS WITH CAVEAT]]
@@ -71,6 +73,6 @@ Throwaway QA resources from 2026-05-13 remain in production and require a separa
 
 ## Next actions
 1. Payment↔grant linkage investigation and local TDD hardening plan; verify production-vs-local scope before any data repair.
-2. Next product slice can proceed: task/execution/output detail polish is the cleanest follow-up now that Deployment Events UX, Workflow Run-History / Execution Trace UX, and Run Agent runtime/Latest Run Open Task QA are live.
+2. Next product slice can proceed: runtime detail copy accessibility labels/tooltips, settings/token/community polish, or optional Run Agent toast persistence are the cleanest follow-ups now that task/execution/output detail polish is live.
 3. Settings/token/community polish, or a throwaway QA cleanup plan if owner approves production cleanup.
 5. Keep recurring generated reports out of git noise unless intentionally archived.
