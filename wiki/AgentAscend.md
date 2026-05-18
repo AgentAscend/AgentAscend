@@ -25,6 +25,7 @@ AgentAscend is a monetized AI x Web3 agent platform. It combines backend-authori
 - Production API is healthy at runtime-worker commit `5e7afb1`; workflow auth ownership hardening is live.
 - Runtime-worker backend is live.
 - Runtime-aware frontend/source audit passed.
+- Runtime Detail / Output Polish production verification passed on 2026-05-17: PR #14 is merged/live at `e2e0873da63e4cb193ef35749ce786f7a52ed27c`, task detail links safely to Output Library by task filter, execution detail supports copy link/ID/source ID, output detail supports copy link and `Untitled output` fallback, and no payment/wallet/API-base/scheduler/admin/raw metadata or payload regressions were introduced. Evidence is archived at [[raw/frontend-qa/2026-05-17-runtime-detail-output-polish-live-pass]].
 - Workflow Run-History / Execution Trace UX production verification passed on 2026-05-17: PR #5 is merged/live at `a010a7aff8ec2358c21fe088ac87d5ede3144f2a`, `/app/workflows` and `/app/executions` are HTTP 200, backend health/OpenAPI are HTTP 200, execution trace preview/link markers are live, and no raw metadata/payload rendering or forbidden scheduler/admin/payment calls were introduced. Evidence is archived at [[raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass]].
 - Deployment Events UX is separately merged/live from PR #4 at `ec4b59e68d7f26edeb43e8a48b122cfeff539fac`; PR #4 and PR #5 are separate successful slices and prior stale/mixed PR #4 references are resolved.
 - Production Playwright follow-up QA on 2026-05-17 passed with polish caveat for the merged Run Agent toast/drawer path: throwaway signup → Ascend Forge create → exactly one visible Run Agent click → backend run POST 200 → task_id returned → no false failure → Pending/Running state → Latest Run drawer without reload → `Open Task` link to `/app/tasks?task_id=...` → Tasks/Executions/Outputs/Overview runtime state. Evidence is archived at [[raw/frontend-qa/2026-05-17-run-agent-toast-drawer-followup-production-qa]].
@@ -33,7 +34,7 @@ AgentAscend is a monetized AI x Web3 agent platform. It combines backend-authori
 - Pump.fun payment/access regression passed; Pump.fun payment flow remains separate from the next frontend polish phase.
 - Forge backend routes are live through deployment events, Command Center, agent definitions, capabilities/templates, and run/deploy bridges.
 - Scheduler workload is report-first/owner-gated.
-- Output Library UX patch is live and browser-QA verified: backend output listing, local loaded-list search, disabled unsupported Export All/Load More, and backend output preview. Deployment Events UX and Workflow Run-History / Execution Trace UX are live. Run Agent runtime path and Latest Run `Open Task` navigation are production verified; exact success toast/action visibility remains optional polish. Frontend product work now shifts to task/execution/output detail polish, settings/token/community polish, and optional throwaway QA cleanup planning. Full visual workflow graph editing is not live yet.
+- Output Library UX patch is live and browser-QA verified: backend output listing, local loaded-list search, disabled unsupported Export All/Load More, and backend output preview. Deployment Events UX, Workflow Run-History / Execution Trace UX, and Runtime Detail / Output Polish are live. Run Agent runtime path and Latest Run `Open Task` navigation are production verified; exact success toast/action visibility remains optional polish. Frontend product work now shifts to runtime detail copy accessibility labels/tooltips, settings/token/community polish, optional Run Agent toast persistence, and optional throwaway QA cleanup planning. Full visual workflow graph editing is not live yet.
 
 ## Notes
 - Backend remains the authority for payment, access, marketplace entitlements, tasks, outputs, executions, and agents.
@@ -48,6 +49,7 @@ AgentAscend is a monetized AI x Web3 agent platform. It combines backend-authori
 - [[Launch Readiness]]
 
 ## Recent Evidence
+- [[raw/frontend-qa/2026-05-17-runtime-detail-output-polish-live-pass|2026-05-17 Runtime Detail / Output Polish live PASS]]
 - [[raw/frontend-qa/2026-05-17-run-agent-toast-drawer-followup-production-qa|2026-05-17 Run Agent toast/drawer follow-up QA PASS WITH POLISH CAVEAT]]
 - [[raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass|2026-05-17 Workflow Run-History / Execution Trace UX live PASS]]
 - [[raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat|2026-05-16 production Run Agent UI click path QA PASS WITH CAVEAT]]

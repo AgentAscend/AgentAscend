@@ -11,10 +11,23 @@ Keep v0/Vercel frontend work aligned with the live backend contract and prevent 
   - `/app/marketplace`
   - `/app/executions`
 - Live routes returned HTTP 200 during read-only audit.
+- Latest Runtime Detail / Output Polish production QA PASS: `raw/frontend-qa/2026-05-17-runtime-detail-output-polish-live-pass.md`. It verified PR #14 merged/live at `e2e0873da63e4cb193ef35749ce786f7a52ed27c`, task detail Output Library deep links by task filter, execution detail copy link/ID/source ID, output detail copy link and `Untitled output` fallback, production route smoke, backend health/OpenAPI compatibility, and no payment/wallet/API-base/scheduler/admin/raw metadata or payload regressions.
 - Latest Workflow Run-History / Execution Trace UX production QA PASS: `raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass.md`. It verified PR #5 merged/live at `a010a7aff8ec2358c21fe088ac87d5ede3144f2a`, Vercel production success, `/app/workflows` HTTP 200, `/app/executions` HTTP 200, backend `/health` HTTP 200, backend `/openapi.json` HTTP 200 valid JSON, execution trace preview/link markers, and no raw metadata/payload rendering or forbidden scheduler/admin/payment calls. PR #4 Deployment Events UX is separately merged/live at `ec4b59e68d7f26edeb43e8a48b122cfeff539fac`; prior stale/mixed PR #4 references are resolved.
 - Latest production Run Agent toast/drawer follow-up QA PASS WITH POLISH CAVEAT: `raw/frontend-qa/2026-05-17-run-agent-toast-drawer-followup-production-qa.md`. It verified throwaway signup → Ascend Forge create → exactly one visible Run Agent click → `POST /agents/{id}/run` HTTP 200 → task_id returned → no false failure → Pending/Running state → Latest Run drawer without reload → `Open Task` link to `/app/tasks?task_id=...` → Tasks/Executions/Outputs/Overview runtime state. Exact `Agent run queued` / toast action visibility remains optional polish, not a blocker; `Open Execution` was not applicable because the run response did not contain execution_id. Payment, wallet, admin, scheduler, `/jobs/run-due`, and Pump.fun were intentionally not tested/called.
 - Previous live Playwright QA PASS WITH CAVEATS: `raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats.md`. It verified throwaway signup → Ascend Forge create → Run Agent → Task → Execution → Output → Output preview plus Output Library search/preview/disabled unsupported actions. Payment, wallet, and Pump.fun were intentionally not tested.
 
+
+## Runtime Detail / Output Polish release gate
+A runtime detail/source or live deployment passes this gate when:
+- `/app/tasks`, `/app/executions`, and `/app/outputs` return HTTP 200 in production.
+- Task detail preserves `/app/tasks?task_id=...` deep links and links to `/app/outputs?task_id=<task_id>`.
+- Empty task-output state is honest and does not fake rows.
+- Execution detail supports copy link, copy execution ID, copy source ID when source metadata is rendered, and preserves safe task/output links.
+- Output detail supports copy link, backend-truth preview/download behavior, and `Untitled output` fallback.
+- Raw metadata, raw payloads, raw task/output content, cookies, tokens, wallet/private data, and credentials are not rendered or archived.
+- Scheduler/admin/payment safety markers remain absent: no `/jobs/run-due`, no frontend runtime-token/admin audit calls, no payment route calls, no wallet provider changes, and no API base/RPC behavior changes unless the slice explicitly covers those areas.
+
+Latest archived PASS: `raw/frontend-qa/2026-05-17-runtime-detail-output-polish-live-pass.md`.
 
 ## Workflow Run-History / Execution Trace UX release gate
 A workflow run-history source or live deployment passes this gate when:
