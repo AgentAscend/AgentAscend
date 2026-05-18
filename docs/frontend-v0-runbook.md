@@ -12,7 +12,7 @@ Keep v0/Vercel frontend work aligned with the live backend contract and prevent 
   - `/app/executions`
 - Live routes returned HTTP 200 during read-only audit.
 - Latest Workflow Run-History / Execution Trace UX production QA PASS: `raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass.md`. It verified PR #5 merged/live at `a010a7aff8ec2358c21fe088ac87d5ede3144f2a`, Vercel production success, `/app/workflows` HTTP 200, `/app/executions` HTTP 200, backend `/health` HTTP 200, backend `/openapi.json` HTTP 200 valid JSON, execution trace preview/link markers, and no raw metadata/payload rendering or forbidden scheduler/admin/payment calls. PR #4 Deployment Events UX is separately merged/live at `ec4b59e68d7f26edeb43e8a48b122cfeff539fac`; prior stale/mixed PR #4 references are resolved.
-- Latest production Run Agent UI click-path QA PASS WITH CAVEAT: `raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat.md`. It verified throwaway signup → Ascend Forge create → visible Run Agent click → `POST /agents/{id}/run` HTTP 200 → Running/Pending state → Tasks/Executions/Outputs/Overview runtime state. Exact `Agent run queued` toast was not observed and remains polish. Payment, wallet, admin, scheduler, `/jobs/run-due`, and Pump.fun were intentionally not tested/called.
+- Latest production Run Agent toast/drawer follow-up QA PASS WITH POLISH CAVEAT: `raw/frontend-qa/2026-05-17-run-agent-toast-drawer-followup-production-qa.md`. It verified throwaway signup → Ascend Forge create → exactly one visible Run Agent click → `POST /agents/{id}/run` HTTP 200 → task_id returned → no false failure → Pending/Running state → Latest Run drawer without reload → `Open Task` link to `/app/tasks?task_id=...` → Tasks/Executions/Outputs/Overview runtime state. Exact `Agent run queued` / toast action visibility remains optional polish, not a blocker; `Open Execution` was not applicable because the run response did not contain execution_id. Payment, wallet, admin, scheduler, `/jobs/run-due`, and Pump.fun were intentionally not tested/called.
 - Previous live Playwright QA PASS WITH CAVEATS: `raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats.md`. It verified throwaway signup → Ascend Forge create → Run Agent → Task → Execution → Output → Output preview plus Output Library search/preview/disabled unsupported actions. Payment, wallet, and Pump.fun were intentionally not tested.
 
 
@@ -37,10 +37,11 @@ A Run Agent source or live deployment passes this gate when:
 - Browser network observes `POST /agents/{id}/run` returning HTTP 200.
 - UI does not show false `Failed to run agent` copy after the successful run.
 - UI shows an honest queued/running/pending state, or a clear success/refresh warning.
+- When a Run Agent slice changes success navigation, inspect the immediate no-reload drawer/panel state and verify safe links such as `Open Task` to `/app/tasks?task_id=...` where backend IDs exist.
 - `/app/tasks`, `/app/executions`, `/app/outputs`, and `/app/overview` show runtime state or honest pending/empty state.
 - Payment, Pump.fun verify, scheduler, `/jobs/run-due`, wallet signing, and frontend admin endpoints are not called during QA.
 
-Latest archived PASS WITH CAVEAT: `raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat.md`. Exact `Agent run queued` toast text remains polish, not a current blocker.
+Latest archived PASS WITH POLISH CAVEAT: `raw/frontend-qa/2026-05-17-run-agent-toast-drawer-followup-production-qa.md`. Runtime path and Latest Run `Open Task` navigation are verified; exact `Agent run queued` / toast action visibility remains optional polish, not a current blocker.
 
 ## Output Library release gate
 An Output Library source or live deployment passes this gate only when:

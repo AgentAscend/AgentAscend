@@ -23,19 +23,19 @@ AgentAscend is in a soft-launch/product-integration posture. The backend remains
 - Live frontend post-deploy QA on 2026-05-11 passed route/header/CSP/Solana RPC/WSS/OpenAPI/private-read/bundle gates.
 - Workflow Run-History / Execution Trace UX production verification on 2026-05-17 passed after AgentAscend-Web PR #5 merged to `origin/main` at `a010a7aff8ec2358c21fe088ac87d5ede3144f2a`: Vercel production success, `/app/workflows` HTTP 200, `/app/executions` HTTP 200, backend `/health` HTTP 200, backend `/openapi.json` HTTP 200 valid JSON, execution trace preview/link markers live, and no raw metadata/payload rendering or forbidden scheduler/admin/payment calls introduced.
 - Deployment Events UX is separately merged/live from PR #4 at `ec4b59e68d7f26edeb43e8a48b122cfeff539fac`; PR #4 and PR #5 are separate successful slices and prior stale/mixed report references are resolved.
-- Production Run Agent UI click-path QA on 2026-05-16 passed with caveat after AgentAscend-Web main included commit `0292142b39962c705069e3c5d6daf2fbf157622c`: throwaway signup → Ascend Forge create → visible Run Agent click → `POST /agents/{id}/run` HTTP 200 → Running/Pending UI → Tasks/Executions/Outputs/Overview runtime state. Exact `Agent run queued` toast was not observed.
+- Production Run Agent toast/drawer follow-up QA on 2026-05-17 passed with polish caveat: throwaway signup → Ascend Forge create → exactly one visible Run Agent click → `POST /agents/{id}/run` HTTP 200 → task_id returned → no false failure → Pending/Running state → Latest Run drawer without reload → `Open Task` link to `/app/tasks?task_id=...` → Tasks/Executions/Outputs/Overview runtime state. Exact `Agent run queued` / toast action visibility remains optional polish, not a blocker; `Open Execution` was not applicable because the run response did not contain execution_id.
 - Live Output Library and signed-in runtime QA on 2026-05-13 passed with caveats using throwaway QA accounts: throwaway signup → Ascend Forge create → Run Agent → Task → Execution → Output → Output preview.
 - Git safety: local `main` is diverged from `origin/main` (`ahead 8 / behind 8` observed 2026-05-12). Do not push/deploy without explicit reconciliation.
 
 ## Product status
 - Runtime-worker backend is live.
 - Runtime-aware frontend/source audit passed.
-- User-facing Run Agent path is production verified from visible UI: throwaway signup, agent create, visible Run Agent click, backend run POST 200, Running/Pending state, task, execution, output, and overview runtime state.
+- User-facing Run Agent path is production verified from visible UI: throwaway signup, agent create, visible Run Agent click, backend run POST 200, Running/Pending state, Latest Run `Open Task`, task, execution, output, and overview runtime state.
 - Workflow auth ownership backend is live; workflow-builder owner-isolation QA passed.
 - `/app/workflows` production baseline: workflow ownership basics are live, create/save/read/run works for owner, cross-user access is blocked, graph save respects `{ nodes: [...] }`, and run-history now exposes execution trace preview plus links to execution/task/output where backend data exists. Full visual graph/editor features remain later.
 - Pump.fun marketplace payment regression passed separately; keep payment/wallet flow separate from routine UI polish.
 - Frontend no longer appears blocked on backend integration for tasks, outputs, executions, agent creation/run, Output Library preview/search basics, or workflow ownership basics.
-- Output Library UX patch is live and browser-QA verified: backend output listing, local loaded-list search copy, disabled unsupported Export All/Load More, and backend output preview. Deployment Events UX and Workflow Run-History / Execution Trace UX are live. Run Agent UI click path is production verified; remaining Run Agent caveat is success-toast polish only. Payment, Pump.fun, and wallet flows were intentionally not tested in these frontend QA slices. Remaining product work: task/execution/output detail polish, settings/token/community polish, and optional throwaway QA cleanup planning if owner-approved.
+- Output Library UX patch is live and browser-QA verified: backend output listing, local loaded-list search copy, disabled unsupported Export All/Load More, and backend output preview. Deployment Events UX and Workflow Run-History / Execution Trace UX are live. Run Agent runtime and Latest Run `Open Task` navigation are production verified; remaining Run Agent caveat is optional success-toast persistence/visibility polish only. Payment, Pump.fun, and wallet flows were intentionally not tested in these frontend QA slices. Remaining product work: task/execution/output detail polish, settings/token/community polish, and optional throwaway QA cleanup planning if owner-approved.
 
 ## Current launch-risk watch
 - 2026-05-11 read-only local DB/payment reports flagged completed payments without active grant linkage by `payment_id` and null-heavy grant linkage fields.
@@ -58,6 +58,7 @@ Throwaway QA resources from 2026-05-13 remain in production and require a separa
 - [[Roadmap]]
 
 ## Recent Evidence
+- [[raw/frontend-qa/2026-05-17-run-agent-toast-drawer-followup-production-qa|2026-05-17 Run Agent toast/drawer follow-up QA PASS WITH POLISH CAVEAT]]
 - [[raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass|2026-05-17 Workflow Run-History / Execution Trace UX live PASS]]
 - [[raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat|2026-05-16 production Run Agent UI click path QA PASS WITH CAVEAT]]
 - [[raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats|2026-05-13 live Output Library and runtime QA PASS WITH CAVEATS]]
@@ -70,6 +71,6 @@ Throwaway QA resources from 2026-05-13 remain in production and require a separa
 
 ## Next actions
 1. Payment↔grant linkage investigation and local TDD hardening plan; verify production-vs-local scope before any data repair.
-2. Next product slice can proceed: task/execution/output detail polish is the cleanest follow-up now that Deployment Events UX and Workflow Run-History / Execution Trace UX are live.
+2. Next product slice can proceed: task/execution/output detail polish is the cleanest follow-up now that Deployment Events UX, Workflow Run-History / Execution Trace UX, and Run Agent runtime/Latest Run Open Task QA are live.
 3. Settings/token/community polish, or a throwaway QA cleanup plan if owner approves production cleanup.
 5. Keep recurring generated reports out of git noise unless intentionally archived.

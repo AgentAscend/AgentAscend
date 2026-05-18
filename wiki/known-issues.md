@@ -19,10 +19,10 @@ Known issues are current unresolved product, integration, or hardening risks. St
 
 ## Current high-priority issues
 1. Payment↔grant ledger linkage/auditability needs investigation: 2026-05-11 read-only local DB/payment reports found completed payments without active grant linkage by `payment_id` and active grants null-heavy for `payment_id`/`intent_reference`. Treat as a launch-risk investigation until production-vs-local scope, backfill path, and forward invariants are verified.
-2. v0 UI polish must continue to derive runtime truth from live backend Forge routes, Command Center, deployment events, tasks, outputs, executions, workflows, payment/access truth, and not stale placeholders. Run Agent UI click path, Output Library search/preview basics, Deployment Events UX, and Workflow Run-History / Execution Trace UX are production/browser-QA verified; do not reintroduce fake runtime/export/load-more/search authority or raw metadata/payload rendering.
+2. v0 UI polish must continue to derive runtime truth from live backend Forge routes, Command Center, deployment events, tasks, outputs, executions, workflows, payment/access truth, and not stale placeholders. Run Agent runtime path plus Latest Run `Open Task`, Output Library search/preview basics, Deployment Events UX, and Workflow Run-History / Execution Trace UX are production/browser-QA verified; do not reintroduce fake runtime/export/load-more/search authority or raw metadata/payload rendering.
 3. Workflow builder remains partially live: owner-isolation and run-history execution trace preview passed, but node configuration/labels and full visual graph editing remain later product polish.
 4. localStorage must not grant paid access, marketplace ownership/install, payment verification, auth bypass, production settings authority, Agent card metrics, workflow ownership, graph state, or runtime status.
-5. Continue watching for stale user-facing `Backend Required` copy in live app advanced/preview surfaces; exact Run Agent success toast copy remains polish because `Agent run queued` was not observed after a successful production run. Prior stale/mixed PR #4 report references are resolved; current run-history state is PR #5.
+5. Continue watching for stale user-facing `Backend Required` copy in live app advanced/preview surfaces; exact Run Agent success toast/action visibility remains optional polish because `Agent run queued` was not observed after successful production runs, while runtime and Latest Run `Open Task` navigation passed. Prior stale/mixed PR #4 report references are resolved; current run-history state is PR #5.
 6. Remaining Pump.fun/Solana runtime dependency advisories are accepted/monitored, not eliminated.
 7. Multi-agent runtime architecture is still planning-only.
 8. Git repository is diverged/noisy (`main` ahead/behind `origin/main` observed 8/8 on 2026-05-12); no push/deploy until reconciliation scope is explicit.
@@ -34,7 +34,7 @@ Known issues are current unresolved product, integration, or hardening risks. St
 - Exact `tx_signature` binding future work: superseded by deployed hardening.
 - Controlled Pump.fun payment regression pending/partial: superseded by 2026-05-03 PASS archive.
 - Forge routes not live: superseded by live OpenAPI evidence.
-- Core logged-in runtime loop blocked: superseded by owner-assisted QA, Hermes 2026-05-13 live Output Library/runtime QA PASS WITH CAVEATS, and 2026-05-16 production Run Agent UI click-path QA PASS WITH CAVEAT.
+- Core logged-in runtime loop blocked: superseded by owner-assisted QA, Hermes 2026-05-13 live Output Library/runtime QA PASS WITH CAVEATS, 2026-05-16 production Run Agent UI click-path QA, and 2026-05-17 Run Agent toast/drawer follow-up QA PASS WITH POLISH CAVEAT.
 - Workflow run-history detail not live: superseded by 2026-05-17 Workflow Run-History / Execution Trace UX live PASS archived at [[raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass]].
 - Deployment Events UX not live: superseded by PR #4 merge/live evidence recorded with the 2026-05-17 current-state update.
 - Workflow auth/ownership privacy blocker: superseded by live workflow owner-isolation QA PASS archived at [[raw/frontend-qa/2026-05-09-workflow-builder-owner-isolation-qa]].
@@ -44,6 +44,7 @@ Known issues are current unresolved product, integration, or hardening risks. St
 - Paused Hermes documentation/strategy/roadmap cronjob errors: superseded by 2026-05-12 retirement/removal and safer active report-only jobs.
 
 ## Recent Evidence
+- [[raw/frontend-qa/2026-05-17-run-agent-toast-drawer-followup-production-qa|2026-05-17 Run Agent toast/drawer follow-up QA PASS WITH POLISH CAVEAT]]
 - [[raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass|2026-05-17 Workflow Run-History / Execution Trace UX live PASS]]
 - [[raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat|2026-05-16 production Run Agent UI click path QA PASS WITH CAVEAT]]
 - [[raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats|2026-05-13 live Output Library and runtime QA PASS WITH CAVEATS]]

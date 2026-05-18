@@ -22,7 +22,7 @@ The Execution Ledger records runtime events, artifacts, execution summaries, and
 - Execution Ledger/Scheduler Ledger is production-enabled for the approved workload.
 - Runtime-worker backend is live and can support the verified runtime loop.
 - Workflow Run-History / Execution Trace UX production verification passed on 2026-05-17: PR #5 is merged/live at `a010a7aff8ec2358c21fe088ac87d5ede3144f2a`, `/app/workflows` and `/app/executions` are HTTP 200, backend health/OpenAPI are HTTP 200, execution trace preview/link markers are live, workflow run-history links to execution/task/output where backend data exists, and no raw `metadata_json` or `payload_json` rendering was introduced.
-- Production Playwright QA on 2026-05-16 passed with caveat for throwaway signup → Ascend Forge create → visible Run Agent click → `POST /agents/{id}/run` HTTP 200 → Running/Pending UI state → Tasks/Executions/Outputs/Overview runtime state. Exact `Agent run queued` toast was not observed, but backend/frontend runtime propagation passed.
+- Production Playwright follow-up QA on 2026-05-17 passed with polish caveat for throwaway signup → Ascend Forge create → exactly one visible Run Agent click → `POST /agents/{id}/run` HTTP 200 → task_id returned → no false failure → Pending/Running UI state → Latest Run drawer without reload → `Open Task` link to `/app/tasks?task_id=...` → Tasks/Executions/Outputs/Overview runtime state. Exact `Agent run queued` / toast action visibility remains optional polish, not a blocker.
 - Live Playwright QA on 2026-05-13 passed with caveats for throwaway signup → Ascend Forge create → Run Agent → Task → Execution → Output → Output preview; focused runtime verification showed one task, one execution, and one output after UI Run Agent.
 - The task queue worker is enabled and can process queued production tasks during natural scheduler runs.
 - Deployment Events UX is merged/live separately from PR #4 at `ec4b59e68d7f26edeb43e8a48b122cfeff539fac`; PR #4 is separate from PR #5 Workflow Run-History / Execution Trace UX.
@@ -32,6 +32,7 @@ The Execution Ledger records runtime events, artifacts, execution summaries, and
 - Full visual workflow graph editing remains a later frontend/product slice; workflow run-history trace preview is live, so next workflow polish should focus on node configuration/labels or broader task/execution/output detail polish.
 
 ## Recent Evidence
+- [[raw/frontend-qa/2026-05-17-run-agent-toast-drawer-followup-production-qa|2026-05-17 Run Agent toast/drawer follow-up QA PASS WITH POLISH CAVEAT]]
 - [[raw/frontend-qa/2026-05-17-workflow-run-history-execution-trace-ux-live-pass|2026-05-17 Workflow Run-History / Execution Trace UX live PASS]]
 - [[raw/frontend-qa/2026-05-16-production-run-agent-click-path-pass-with-caveat|2026-05-16 production Run Agent UI click path QA PASS WITH CAVEAT]]
 - [[raw/frontend-qa/2026-05-13-live-output-library-runtime-qa-pass-with-caveats|2026-05-13 live Output Library and runtime QA PASS WITH CAVEATS]]
@@ -54,5 +55,5 @@ Execution artifact and output previews must remain sanitized in docs and UI repo
 - [[current-project-state|Current Project State]]
 
 ## Next actions
-- Polish frontend Command Center, task detail, execution detail, workflow node configuration UX, settings/token/community surfaces, and Run Agent success-toast copy. Deployment Events UX and Workflow Run-History / Execution Trace UX are live.
+- Polish frontend task detail, execution detail, output detail, workflow node configuration UX, settings/token/community surfaces, and optional Run Agent success-toast persistence. Deployment Events UX, Workflow Run-History / Execution Trace UX, and Run Agent Latest Run `Open Task` navigation are live.
 - Keep execution artifacts/logs sanitized; do not expose raw task body/output in docs or UI reports.
